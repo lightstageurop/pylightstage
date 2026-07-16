@@ -30,6 +30,10 @@ class LightStageClient:
         if self._websocket:
             await self._websocket.close()
 
+    # Allows usage like
+    #
+    # async with LightStageClient() as client:
+    #     await client.turn_on_light(...)
     async def __aenter__(self):
         await self.connect()
         return self
@@ -87,6 +91,7 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
         go=True
     ):
+        """Set colour/intensity of a single fixture."""
         if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
@@ -106,6 +111,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         go=True
     ):
+        """Turn off a single fixture."""
         await self.turn_on_light(light, arc, color, (0, 0, 0), go)
 
     async def turn_on_arc(
@@ -114,6 +120,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
+        """Set colour/intensity of an arc."""
         if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
@@ -130,6 +137,7 @@ class LightStageClient:
         arc: int,
         color: ColorMode = 'rgbw',
     ):
+        """Turn off an arc."""
         await self.turn_on_arc(arc, color, (0, 0, 0))
 
     async def turn_on_lightstage(
@@ -137,6 +145,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
+        """Set colour/intensity of entire light stage."""
         if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
@@ -149,6 +158,7 @@ class LightStageClient:
         self,
         color: ColorMode = 'rgbw',
     ):
+        """Turn off entire lightstage"""
         await self.turn_on_lightstage(color, (0, 0, 0))
 
     async def turn_on_pol_light(
@@ -191,9 +201,13 @@ class LightStageClient:
 class LightStageSyncClient:
     """
     Synchronous wrapper for LightStageClient.
+
+    This class runs an asyncio event loop in a background thread,
+    allowing async websocket operations to happen while exposing regular blocking methods.
     """
 
     def __init__(self, *args, **kwargs):
+        # Underlying async implementation
         self._client = LightStageClient(*args, **kwargs)
 
         self._loop = asyncio.new_event_loop()
@@ -219,8 +233,9 @@ class LightStageSyncClient:
             self._loop.close()
 
     def _run(self, coro):
+        """Allows running an async coroutine from the synchronous thread."""
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result()
+        return future.result()  # block until coroutine returns
 
     def close(self):
         try:
@@ -229,6 +244,10 @@ class LightStageSyncClient:
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join()
 
+    # Allows usage like
+    #
+    # with LightStageClient() as client:
+    #     client.turn_on_light(...)
     def __enter__(self):
         self._run(self._client.connect())
         return self
@@ -236,6 +255,8 @@ class LightStageSyncClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    # Forward any other attributes to the underlying async client,
+    # wrapping everything so it can be called from sync code.
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._client, name)
 
