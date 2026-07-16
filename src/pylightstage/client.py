@@ -12,7 +12,7 @@ PolarizationMode = Literal['up', 'cp', 'pp']
 
 
 class LightStageClient:
-    def __init__(self, uri: str = "ws://10.37.211.100:8080/sw"):
+    def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
         """Initialise the Light Stage Client."""
 
         self._uri = uri
