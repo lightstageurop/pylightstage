@@ -63,8 +63,11 @@ class LightStageClient:
 
     def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
         """Helper to build the UpdateColourRequest payload."""
-        r, g, b = self._to_16b(intensity)
-        pass
+        value = self._to_16b(intensity)
+        return {
+            **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
+            **({"white": value} if color in ('w', 'rgbw') else {}),
+        }
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
