@@ -1,0 +1,14 @@
+[build-system]
+  build-backend = "setuptools.build_meta"
+  requires = ["setuptools>=68", "wheel"]
+
+
+[project]
+  authors = [{ name = "Thomas Aldrian", email = "thomas.aldrian24@imperial.ac.uk" }]
+  dependencies = ["cbor2", "websockets"]
+  license = { text = "MIT" }
+  name = "pylightstage"
+  version = "0.1.0"
+
+[tool.setuptools.packages.find]
+  where = ["src"]
