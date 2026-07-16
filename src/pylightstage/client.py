@@ -1,5 +1,9 @@
 import asyncio
-from typing import Literal, Optional, Tuple
+import threading
+from typing import Literal, Optional, Tuple, Any
+import inspect
+import functools
+
 import cbor2
 import websockets
 
@@ -11,20 +15,20 @@ class LightStageClient:
     def __init__(self, uri: str = "ws://10.37.211.100:8080/sw"):
         """Initialise the Light Stage Client."""
 
-        self.uri = uri
-        self.websocket = None
+        self._uri = uri
+        self._websocket = None
 
         # Local buffer for fixture updates (used when go=False).
         self._pending_updates = {}
 
     async def connect(self):
         """Establish WebSocket connection to light stage server."""
-        self.websocket = await websockets.connect(self.uri)
+        self._websocket = await websockets.connect(self._uri)
 
     async def close(self):
         """Safely close WebSocket connection."""
-        if self.websocket:
-            self.websocket.close()
+        if self._websocket:
+            await self._websocket.close()
 
     async def __aenter__(self):
         await self.connect()
@@ -35,6 +39,7 @@ class LightStageClient:
 
     # Utilities
 
+    @staticmethod
     def _to_16b(
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
     ) -> Tuple[int, int, int]:
@@ -54,7 +59,7 @@ class LightStageClient:
 
     def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
         """Helper to build the UpdateColourRequest payload."""
-        r, g, b = _to_16b(intensity)
+        r, g, b = self._to_16b(intensity)
         pass
 
     async def go(self):
@@ -82,7 +87,7 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
         go=True
     ):
-        if not self.websocket:
+        if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         cmd = {
@@ -92,7 +97,7 @@ class LightStageClient:
                 "colour": self._build_color_req(color, intensity)
             }
         }
-        await self.websocket.send(cbor2.dumps(cmd))
+        await self._websocket.send(cbor2.dumps(cmd))
 
     async def turn_off_light(
         self,
@@ -101,7 +106,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         go=True
     ):
-        self.turn_on_light(light, arc, color, (0, 0, 0), go)
+        await self.turn_on_light(light, arc, color, (0, 0, 0), go)
 
     async def turn_on_arc(
         self,
@@ -109,7 +114,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
-        if not self.websocket:
+        if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         cmd = {
@@ -118,33 +123,33 @@ class LightStageClient:
                 "colour": self._build_color_req(color, intensity)
             }
         }
-        await self.websocket.send(cbor2.dumps(cmd))
+        await self._websocket.send(cbor2.dumps(cmd))
 
     async def turn_off_arc(
         self,
         arc: int,
         color: ColorMode = 'rgbw',
     ):
-        self.turn_on_arc(arc, color, (0, 0, 0))
+        await self.turn_on_arc(arc, color, (0, 0, 0))
 
     async def turn_on_lightstage(
         self,
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
-        if not self.websocket:
+        if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         cmd = {
             "SetLightstage": self._build_color_req(color, intensity)
         }
-        await self.websocket.send(cbor2.dumps(cmd))
+        await self._websocket.send(cbor2.dumps(cmd))
 
     async def turn_off_lightstage(
         self,
         color: ColorMode = 'rgbw',
     ):
-        self.turn_on_lightstage(arc, color, (0, 0, 0))
+        await self.turn_on_lightstage(color, (0, 0, 0))
 
     async def turn_on_pol_light(
         self,
@@ -163,7 +168,7 @@ class LightStageClient:
         pol: PolarizationMode = 'up',
         go=True,
     ):
-        self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
+        await self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
 
     async def turn_on_horizontal_arc(
         self,
@@ -180,4 +185,64 @@ class LightStageClient:
         arc: int,
         color: ColorMode = 'rgbw',
     ):
-        self.turn_on_horizontal_arc(light, arc, color, (0, 0, 0))
+        await self.turn_on_horizontal_arc(light, arc, color, (0, 0, 0))
+
+
+class LightStageSyncClient:
+    """
+    Synchronous wrapper for LightStageClient.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._client = LightStageClient(*args, **kwargs)
+
+        self._loop = asyncio.new_event_loop()
+        self._ready = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            daemon=True
+        )
+        self._thread.start()
+
+        # Block until event loop is running
+        self._ready.wait()
+
+    def _run_loop(self):
+        asyncio.set_event_loop(self._loop)
+
+        # Tell main thread we're ready
+        self._loop.call_soon_threadsafe(self._ready.set)
+
+        try:
+            self._loop.run_forever()
+        finally:
+            self._loop.close()
+
+    def _run(self, coro):
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result()
+
+    def close(self):
+        try:
+            self._run(self._client.close())
+        finally:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join()
+
+    def __enter__(self):
+        self._run(self._client.connect())
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._client, name)
+
+        if inspect.iscoroutinefunction(attr):
+            @functools.wraps(attr)
+            def wrapper(*args, **kwargs):
+                return self._run(attr(*args, **kwargs))
+            return wrapper
+
+        return attr

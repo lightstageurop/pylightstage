@@ -1,3 +1,3 @@
-from .client import LightStageClient
+from .client import LightStageClient, LightStageSyncClient
 
-__all__ = ["LightStageClient"]
+__all__ = ["LightStageClient", "LightStageSyncClient"]
