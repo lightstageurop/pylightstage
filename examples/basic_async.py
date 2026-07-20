@@ -22,9 +22,12 @@ async def main():
         await client.turn_on_lightstage(color='w', intensity=(0.0, 0.0, 255.0))
         await asyncio.sleep(1)
 
+        print("Triggering cameras..")
+        await client.trigger()
+        await asyncio.sleep(1)
+
         print("Turn off stage.")
         await client.turn_off_lightstage(color='rgbw')
-
 
 if __name__ == "__main__":
     asyncio.run(main())

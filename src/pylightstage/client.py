@@ -43,6 +43,23 @@ class LightStageClient:
 
     # Utilities
 
+    async def _send_and_recv(self, cmd: Any) -> Any:
+        """Helper to send CBOR message and listen for response."""
+        if not self._websocket:
+            raise RuntimeError("Not connected to WebSocket server.")
+
+        await self._websocket.send(cbor2.dumps(cmd))
+
+        raw_msg = await self._websocket.recv()
+        response = cbor2.loads(raw_msg)
+
+        if isinstance(response, dict) and "Error" in response:
+            err = response["Error"]
+            msg = err.get("message", "Unknown error")
+            raise RuntimeError(f"Server Error ({err.get('code')}): {msg}")
+
+        return response
+
     @staticmethod
     def _to_16b(
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
@@ -85,6 +102,10 @@ class LightStageClient:
         pass
 
     # Manual mode API
+
+    async def trigger(self):
+        """Trigger a camera capture in manual mode."""
+        await self._send_and_recv("ManualTrigger")
 
     async def turn_on_light(
         self,
