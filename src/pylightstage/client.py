@@ -25,6 +25,9 @@ class LightStageClient:
         self._pending_requests: dict[int, asyncio.Future] = {}
         self._receiver_task: Optional[asyncio.Task] = None
 
+        # used for `wait_until_disconnected`
+        self._disconnected_event = asyncio.Event()
+
         # Local buffer for fixture updates (used when go=False).
         # (arc_idx, light_idx) -> UpdateColourRequest
         self._pending_updates: dict[Tuple[int, int], dict] = {}
@@ -35,6 +38,7 @@ class LightStageClient:
             return  # already connected
 
         self._websocket = await websockets.connect(self._uri)
+        self._disconnected_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver())
 
     async def close(self):
@@ -51,8 +55,18 @@ class LightStageClient:
             await self._websocket.close()
             self._websocket = None
 
+        self._disconnected_event.set()
         self._fail_pending_requests(
             RuntimeError("Connection closed by client"))
+
+    @property
+    def is_connected(self) -> bool:
+        """Returns True if WebSocket is connected."""
+        return self._websocket is not None
+
+    async def wait_until_disconnected(self):
+        """Block until WebSocket disconnects."""
+        await self._disconnected_event.wait()
 
     # Allows usage like
     #
@@ -101,6 +115,7 @@ class LightStageClient:
             self._fail_pending_requests(exc)
         finally:
             self._websocket = None
+            self._disconnected_event.set()
 
     def _dispatch_callback(self, callback: Callable, event: Any):
         try:
