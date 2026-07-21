@@ -1,11 +1,14 @@
 import asyncio
-import threading
-from typing import Literal, Optional, Tuple, Any
-import inspect
 import functools
+import inspect
+import logging
+import threading
+from typing import Any, Callable, Dict, Literal, Optional, Tuple, Union
 
 import cbor2
 import websockets
+
+logger = logging.getLogger("LightStageClient")
 
 ColorMode = Literal['rgb', 'w', 'rgbw']
 PolarizationMode = Literal['up', 'cp', 'pp']
@@ -14,21 +17,42 @@ PolarizationMode = Literal['up', 'cp', 'pp']
 class LightStageClient:
     def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
         """Initialise the Light Stage Client."""
-
         self._uri = uri
         self._websocket = None
+        self._req_id = 0
+
+        self._event_callbacks: list[Callable[[Any], Any]] = []
+        self._pending_requests: dict[int, asyncio.Future] = {}
+        self._receiver_task: Optional[asyncio.Task] = None
 
         # Local buffer for fixture updates (used when go=False).
-        self._pending_updates = {}
+        # (arc_idx, light_idx) -> UpdateColourRequest
+        self._pending_updates: dict[Tuple[int, int], dict] = {}
 
     async def connect(self):
         """Establish WebSocket connection to light stage server."""
+        if self._websocket is not None:
+            return  # already connected
+
         self._websocket = await websockets.connect(self._uri)
+        self._receiver_task = asyncio.create_task(self._receiver())
 
     async def close(self):
         """Safely close WebSocket connection."""
+        if self._receiver_task:
+            self._receiver_task.cancel()
+            try:
+                await self._receiver_task
+            except asyncio.CancelledError:
+                pass
+            self._receiver_task = None
+
         if self._websocket:
             await self._websocket.close()
+            self._websocket = None
+
+        self._fail_pending_requests(
+            RuntimeError("Connection closed by client"))
 
     # Allows usage like
     #
@@ -41,24 +65,105 @@ class LightStageClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
+    # Receiver and events things
+
+    async def _receiver(self):
+        try:
+            assert self._websocket is not None
+            async for raw_msg in self._websocket:
+                msg = cbor2.loads(raw_msg)
+                if not isinstance(msg, dict):
+                    continue
+
+                if "Response" in msg:
+                    resp_envelope = msg["Response"]
+                    # match request id
+                    resp_id = resp_envelope.get("id")
+                    if resp_id is not None:
+                        future = self._pending_requests.pop(resp_id, None)
+                        if future and not future.done():
+                            future.set_result(resp_envelope.get("response"))
+
+                elif "Event" in msg:
+                    event = msg["Event"]
+                    for callback in self._event_callbacks:
+                        self._dispatch_callback(callback, event)
+
+        except asyncio.CancelledError:
+            pass
+        except websockets.ConnectionClosed as exc:
+            logging.warning(f"WebSocket connection closed unexpectedly: {exc}")
+            self._fail_pending_requests(RuntimeError(
+                f"WebSocket connection lost: {exc}"))
+        except Exception as exc:
+            logger.error(f"Unexpected error in receiver loop: {exc}")
+            # fail waiting futures
+            self._fail_pending_requests(exc)
+        finally:
+            self._websocket = None
+
+    def _dispatch_callback(self, callback: Callable, event: Any):
+        try:
+            if inspect.iscoroutinefunction(callback):
+                asyncio.create_task(callback(event))
+            else:
+                callback(event)
+        except Exception:
+            # if user code crashes, we don't care
+            logger.error(f"Error in event callback: {exc}")
+
+    def _fail_pending_requests(self, exc: Exception):
+        for fut in list(self._pending_requests.values()):
+            if not fut.done():
+                fut.set_exception(exc)
+        self._pending_requests.clear()
+
     # Utilities
+
+    def _next_id(self) -> int:
+        self._req_id += 1
+        return self._req_id
 
     async def _send_and_recv(self, cmd: Any) -> Any:
         """Helper to send CBOR message and listen for response."""
         if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
-        await self._websocket.send(cbor2.dumps(cmd))
+        req_id = self._next_id()
+        future = asyncio.get_running_loop().create_future()
+        self._pending_requests[req_id] = future
 
-        raw_msg = await self._websocket.recv()
-        response = cbor2.loads(raw_msg)
+        payload = {
+            "id": req_id,
+            "command": cmd,
+        }
+        await self._websocket.send(cbor2.dumps(payload))
 
-        if isinstance(response, dict) and "Error" in response:
-            err = response["Error"]
-            msg = err.get("message", "Unknown error")
-            raise RuntimeError(f"Server Error ({err.get('code')}): {msg}")
+        try:
+            resp = await future
+            return self._unwrap_response(resp)
+        finally:
+            self._pending_requests.pop(req_id, None)
 
-        return response
+    @staticmethod
+    def _unwrap_response(resp: Any) -> Any:
+        # WsResponse::Error
+        if isinstance(resp, dict) and "Error" in resp:
+            err = resp["Error"]
+            raise RuntimeError(
+                f"Server Error ({err.get('code')}): {err.get('message')}")
+
+        # WsResponse::Ok
+        if resp == "Ok":
+            return None
+        if isinstance(resp, dict):
+            # WsResponse::Mode
+            if "Mode" in resp:
+                return resp["Mode"]
+            # WsResponse::Config
+            if "Config" in resp:
+                return resp["Config"]
+        return resp
 
     @staticmethod
     def _to_16b(
@@ -88,18 +193,67 @@ class LightStageClient:
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
-        pass
+        if not self._pending_updates:
+            return
+
+        fixtures = [
+            {
+                "arc_idx": arc,
+                "light_idx": light,
+                "colour": colour_req
+            }
+            for (arc, light), colour_req in self._pending_updates.items()
+        ]
+        self._pending_updates.clear()
+
+        await self._send_and_recv({"SetFixtures": fixtures})
+
+    # Events
+
+    def on_event(self, fn: Callable[[Any], None]) -> Callable[[Any], None]:
+        """Register an event callback handler."""
+        self._event_callbacks.append(fn)
+        return fn
+
+    async def wait_for_event(
+        self,
+        event_name: str,
+        # predicate: Optional[Callable[[Any], bool]] = None
+        timeout: Optional[float] = 30.0
+    ) -> Any:
+        """Block until a specific event arrives."""
+        fut = asyncio.get_running_loop().create_future()
+
+        def _check_event(event):
+            name = None
+            if isinstance(event, str):
+                name = event
+            elif isinstance(event, dict) and event:
+                name = next(iter(event.keys()))
+            if name == event_name and not fut.done():
+                fut.set_result(event)
+
+        self.on_event(_check_event)
+
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        finally:
+            if _check_event in self._event_callbacks:
+                self._event_callbacks.remove(_check_event)
 
     # Configuration
 
     async def get_config(self) -> Optional[dict]:
-        pass
+        """Get the server's configuration."""
+        return await self._send_and_recv("GetConfig")
 
     async def get_mode(self) -> Optional[dict]:
-        pass
+        """Get the current operation mode of the light stage."""
+        return await self._send_and_recv("GetMode")
 
-    async def set_mode(self, mode):
-        pass
+    async def set_mode(self, mode: Union[str, dict]):
+        """Set the operation mode of the light stage."""
+        return await self._send_and_recv({"SetMode": mode})
 
     # Manual mode API
 
@@ -116,17 +270,24 @@ class LightStageClient:
         go=True
     ):
         """Set colour/intensity of a single fixture."""
-        if not self._websocket:
-            raise RuntimeError("Not connected to WebSocket server.")
+        colour_req = self._build_color_req(color, intensity)
 
-        cmd = {
-            "SetFixture": {
-                "arc_idx": arc,
-                "light_idx": light,
-                "colour": self._build_color_req(color, intensity)
+        if not go:
+            self._pending_updates[(arc, light)] = colour_req
+            return
+
+        if self._pending_updates:
+            self._pending_updates[(arc, light)] = colour_req
+            await self.go()
+        else:
+            cmd = {
+                "SetFixture": {
+                    "arc_idx": arc,
+                    "light_idx": light,
+                    "colour": colour_req
+                }
             }
-        }
-        await self._websocket.send(cbor2.dumps(cmd))
+            await self._send_and_recv(cmd)
 
     async def turn_off_light(
         self,
@@ -145,16 +306,13 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of an arc."""
-        if not self._websocket:
-            raise RuntimeError("Not connected to WebSocket server.")
-
         cmd = {
             "SetArc": {
                 "arc_idx": arc,
                 "colour": self._build_color_req(color, intensity)
             }
         }
-        await self._websocket.send(cbor2.dumps(cmd))
+        await self._send_and_recv(cmd)
 
     async def turn_off_arc(
         self,
@@ -170,13 +328,10 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of entire light stage."""
-        if not self._websocket:
-            raise RuntimeError("Not connected to WebSocket server.")
-
         cmd = {
             "SetLightstage": self._build_color_req(color, intensity)
         }
-        await self._websocket.send(cbor2.dumps(cmd))
+        await self._send_and_recv(cmd)
 
     async def turn_off_lightstage(
         self,
