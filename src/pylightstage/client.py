@@ -262,6 +262,9 @@ class LightStageSyncClient:
         return future.result()  # block until coroutine returns
 
     def close(self):
+        if not self._thread.is_alive():
+            return
+
         try:
             self._run(self._client.close())
         finally:
@@ -270,7 +273,7 @@ class LightStageSyncClient:
 
     # Allows usage like
     #
-    # with LightStageClient() as client:
+    # with LightStageSyncClient() as client:
     #     client.turn_on_light(...)
     def __enter__(self):
         self._run(self._client.connect())
