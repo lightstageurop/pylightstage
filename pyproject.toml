@@ -10,5 +10,19 @@
   name = "pylightstage"
   version = "0.1.0"
 
+  [project.optional-dependencies]
+    dev = ["pytest", "pytest-asyncio"]
+
 [tool.setuptools.packages.find]
   where = ["src"]
+
+[tool.pytest.ini_options]
+  addopts = "-ra -q -m 'not integration'"
+  asyncio_mode = "auto"
+  markers = [
+    "integration: tests that require lsserver to be running",
+    "unit: isolated unit tests, do not require lsserver",
+  ]
+  minversion = "6.0"
+  pythonpath = ["src"]
+  testpaths = ["tests"]
