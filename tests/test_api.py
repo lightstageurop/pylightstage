@@ -9,7 +9,7 @@ from the network layer.
 import pytest
 from unittest.mock import AsyncMock
 
-from pylightstage.client import LightStageClient
+from pylightstage.client import LightStageClient, StageMode
 
 
 pytestmark = pytest.mark.unit
@@ -21,7 +21,7 @@ async def test_get_config_and_mode():
     client._send_and_recv = AsyncMock(side_effect=[{"arcs": 12}, "Manual"])
 
     assert await client.get_config() == {"arcs": 12}
-    assert await client.get_mode() == "Manual"
+    assert await client.get_mode() == StageMode.MANUAL
 
     calls = client._send_and_recv.call_args_list
     assert calls[0][0][0] == "GetConfig"

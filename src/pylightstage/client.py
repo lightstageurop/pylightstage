@@ -1,4 +1,6 @@
 import asyncio
+from dataclasses import asdict, dataclass
+from enum import Enum
 import functools
 import inspect
 import logging
@@ -12,6 +14,20 @@ logger = logging.getLogger("LightStageClient")
 
 ColorMode = Literal['rgb', 'w', 'rgbw']
 PolarizationMode = Literal['up', 'cp', 'pp']
+
+
+class StageMode(Enum):
+    """Light stage operation modes."""
+    DEMO = "Demo"
+    MANUAL = "Manual"
+    OLAT = "OLAT"
+    PLAYBACK = "Playback"
+
+
+@dataclass
+class CaptureConfig:
+    """Configuration options for capture modes (OLAT, Playback)."""
+    capture_hz: float = 30.0
 
 
 class LightStageClient:
@@ -123,7 +139,7 @@ class LightStageClient:
                 asyncio.create_task(callback(event))
             else:
                 callback(event)
-        except Exception:
+        except Exception as exc:
             # if user code crashes, we don't care
             logger.error(f"Error in event callback: {exc}")
 
@@ -259,19 +275,52 @@ class LightStageClient:
             if _check_event in self._event_callbacks:
                 self._event_callbacks.remove(_check_event)
 
-    # Configuration
+    # Configuration and Modes
 
     async def get_config(self) -> Optional[dict]:
         """Get the server's configuration."""
         return await self._send_and_recv("GetConfig")
 
-    async def get_mode(self) -> Optional[dict]:
+    async def get_mode(self) -> Optional[StageMode]:
         """Get the current operation mode of the light stage."""
-        return await self._send_and_recv("GetMode")
+        mode_str = await self._send_and_recv("GetMode")
+        return StageMode(mode_str) if mode_str else None
 
-    async def set_mode(self, mode: Union[str, dict]):
-        """Set the operation mode of the light stage."""
-        return await self._send_and_recv({"SetMode": mode})
+    async def set_mode(self, mode: Union[StageMode, str], config: Optional[Union[CaptureConfig, dict]] = None):
+        """
+        Set the operation mode of the light stage.
+
+        Raises:
+            ValueError: If no config provided for OLAT or Playback modes
+        """
+        mode_str = mode.value if isinstance(mode, StageMode) else mode
+
+        if mode_str in ("OLAT", "Playback") and config is None:
+            raise ValueError(
+                f"CaptureConfig is required when setting mode to '{mode_str}'.")
+
+        config_payload = asdict(config) if isinstance(
+            config, CaptureConfig) else config
+
+        cmd = {
+            "SetMode": {
+                "type": mode_str,
+                "config": config_payload
+            }
+        }
+        return await self._send_and_recv(cmd)
+
+    async def set_mode_demo(self):
+        return await self.set_mode(StageMode.DEMO)
+
+    async def set_mode_manual(self):
+        return await self.set_mode(StageMode.MANUAL)
+
+    async def set_mode_olat(self, capture_hz: float):
+        return await self.set_mode(StageMode.OLAT, config=CaptureConfig(capture_hz=capture_hz))
+
+    async def set_mode_playback(self, capture_hz: float):
+        return await self.set_mode(StageMode.PLAYBACK, config=CaptureConfig(capture_hz=capture_hz))
 
     # Manual mode API
 

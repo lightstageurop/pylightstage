@@ -8,7 +8,7 @@ will automatically skip rather than fail the test suite.
 import asyncio
 import pytest
 
-from pylightstage.client import LightStageClient
+from pylightstage.client import LightStageClient, StageMode, CaptureConfig
 
 
 pytestmark = pytest.mark.integration
@@ -48,17 +48,24 @@ async def test_integration_get_config(real_client):
 
 async def test_integration_set_and_read_mode(real_client):
     """Verify we can explicitly set the mode using ModeRequest tagged enums."""
-    # original_mode is returned as a StageMode string (e.g. "Demo" or "Manual")
     original_mode = await real_client.get_mode()
 
     try:
-        # 1. Set to Demo mode using internally tagged enum {"type": "Demo"}
-        await real_client.set_mode({"type": "Demo"})
-        assert await real_client.get_mode() == "Demo"
+        # 1. Set to Demo mode
+        await real_client.set_mode(StageMode.DEMO)
+        assert await real_client.get_mode() == StageMode.DEMO
 
-        # 2. Set to Manual mode using {"type": "Manual"}
-        await real_client.set_mode({"type": "Manual"})
-        assert await real_client.get_mode() == "Manual"
+        # 2. Set to Manual mode
+        await real_client.set_mode("Manual")
+        assert await real_client.get_mode() == StageMode.MANUAL
+
+        # 3. Set to OLAT
+        await real_client.set_mode_olat(20.0)
+        assert await real_client.get_mode() == StageMode.OLAT
+
+        # 4. Set to Playback
+        await real_client.set_mode(StageMode.PLAYBACK, CaptureConfig(20.0))
+        assert await real_client.get_mode() == StageMode.PLAYBACK
 
     finally:
         # Restore the original state using its tagged representation
@@ -80,8 +87,8 @@ async def test_integration_fixture_forces_manual_mode(real_client):
 
     try:
         # 1. Force the server into Demo mode initially
-        await real_client.set_mode({"type": "Demo"})
-        assert await real_client.get_mode() == "Demo"
+        await real_client.set_mode(StageMode.DEMO)
+        assert await real_client.get_mode() == StageMode.DEMO
 
         # 2. Buffer a light update without sending it (go=False)
         await real_client.turn_on_light(
@@ -89,7 +96,7 @@ async def test_integration_fixture_forces_manual_mode(real_client):
         )
 
         # 3. Verify the mode is STILL Demo (the server hasn't seen the command yet)
-        assert await real_client.get_mode() == "Demo"
+        assert await real_client.get_mode() == StageMode.DEMO
 
         # 4. Flush the buffer (go=True)
         await real_client.go()
@@ -98,7 +105,7 @@ async def test_integration_fixture_forces_manual_mode(real_client):
         await asyncio.sleep(0.1)
 
         # 5. Verify the server automatically switched to Manual mode
-        assert await real_client.get_mode() == "Manual"
+        assert await real_client.get_mode() == StageMode.MANUAL
 
         # Clean up the light we just turned on
         await real_client.turn_off_light(light=1, arc=1)
