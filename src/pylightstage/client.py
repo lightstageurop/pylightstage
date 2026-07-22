@@ -139,14 +139,14 @@ class LightStageClient:
         self._req_id += 1
         return self._req_id
 
-    async def _send_and_recv(self, cmd: Any) -> Any:
+    async def _send_and_recv(self, cmd: Any, timeout: float = 5.0) -> Any:
         """Helper to send CBOR message and listen for response."""
         if not self._websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         req_id = self._next_id()
-        future = asyncio.get_running_loop().create_future()
-        self._pending_requests[req_id] = future
+        fut = asyncio.get_running_loop().create_future()
+        self._pending_requests[req_id] = fut
 
         payload = {
             "id": req_id,
@@ -155,8 +155,11 @@ class LightStageClient:
         await self._websocket.send(cbor2.dumps(payload))
 
         try:
-            resp = await future
+            resp = await asyncio.wait_for(fut, timeout=timeout)
             return self._unwrap_response(resp)
+        except asyncio.TimeoutError:
+            raise TimeoutError(
+                f"Server did not respond to command (id={req_id}, cmd={cmd}) within {timeout}s")
         finally:
             self._pending_requests.pop(req_id, None)
 
