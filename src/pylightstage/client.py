@@ -541,6 +541,60 @@ class LightStageClient:
     ):
         await self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
 
+    async def show_env_map(
+        self,
+        env_map: Any,
+        color: ColorMode = 'rgb',
+        scale: float = 1.0
+    ):
+        """Show a 168x3 environment map, ordered by arc then light."""
+        color = self._validate_color(color)
+        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
+            light = i % self.LIGHTS_PER_ARC
+            arc = i // self.LIGHTS_PER_ARC
+            await self.turn_on_light(light, arc, color, value, go=False)
+        await self.go()
+
+    async def show_pol_env_map(
+        self,
+        env_map: Any,
+        pol: PolarizationMode = 'up',
+        scale: float = 1.0
+    ):
+        """Show a 168x3 environment map through the polarization layout."""
+        pol = self._validate_pol(pol)
+        if pol == 'up':
+            await self.show_env_map(env_map, 'rgbw', scale)
+            return
+
+        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
+            light = i % self.LIGHTS_PER_ARC
+            arc = i // self.LIGHTS_PER_ARC
+            await self.turn_on_pol_light(light, arc, pol, value, go=False)
+        await self.go()
+
+    async def show_pol_env_map_new(
+        self,
+        env_map: Any,
+        pol: PolarizationMode = 'up',
+        color: ColorMode = 'rgbw',
+        scale: float = 1.0
+    ):
+        """Show a polarized environment map, optionally limited to RGB or white fixtures."""
+        pol = self._validate_pol(pol)
+        color = self._validate_color(color)
+        if pol == 'up':
+            await self.show_env_map(env_map, color, scale)
+            return
+
+        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
+            light = i % self.LIGHTS_PER_ARC
+            arc = i // self.LIGHTS_PER_ARC
+            polarized_color = self._polarized_color(light, arc, pol)
+            if color == 'rgbw' or color == polarized_color:
+                await self.turn_on_light(light, arc, polarized_color, value, go=False)
+        await self.go()
+
     async def turn_on_horizontal_arc(
         self,
         light: int,
