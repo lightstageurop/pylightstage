@@ -101,7 +101,7 @@ class LightStageClient:
 
                 elif "Event" in msg:
                     event = msg["Event"]
-                    for callback in self._event_callbacks:
+                    for callback in list(self._event_callbacks):
                         self._dispatch_callback(callback, event)
 
         except asyncio.CancelledError:
@@ -508,6 +508,15 @@ class LightStageSyncClient:
         try:
             self._loop.run_forever()
         finally:
+            pending = [t for t in asyncio.all_tasks(
+                self._loop) if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True))
+
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             self._loop.close()
 
     def _run(self, coro):
