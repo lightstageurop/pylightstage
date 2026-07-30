@@ -309,9 +309,8 @@ class LightStageClient:
             }
             for (arc, light), colour_req in self._pending_updates.items()
         ]
-        self._pending_updates.clear()
-
         await self._send_and_recv({"SetFixtures": fixtures})
+        self._pending_updates.clear()
 
     # Events
 
