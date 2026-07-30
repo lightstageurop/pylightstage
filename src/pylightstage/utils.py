@@ -1,9 +1,11 @@
 from typing import Tuple
 
+from .models import FixtureIntensity, FixtureValue
+
 
 def to_16b(
-    intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
-) -> Tuple[int, int, int]:
+    intensity: FixtureIntensity = (255.0, 255.0, 255.0),
+) -> FixtureValue:
     """
     Utility to scale 0.0-255.0 inputs to uint16 (0-65535).
 

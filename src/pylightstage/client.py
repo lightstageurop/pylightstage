@@ -1,35 +1,18 @@
 import asyncio
 from dataclasses import asdict, dataclass
-from enum import Enum
 import functools
 import inspect
 import logging
 import threading
-from typing import Any, Callable, Dict, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import cbor2
 import websockets
 
+from .models import StageMode, FixtureIntensity
 from .utils import to_16b
 
 logger = logging.getLogger("LightStageClient")
-
-ColorMode = Literal['rgb', 'w', 'rgbw']
-PolarizationMode = Literal['up', 'cp', 'pp']
-
-
-class StageMode(Enum):
-    """Light stage operation modes."""
-    DEMO = "Demo"
-    MANUAL = "Manual"
-    OLAT = "OLAT"
-    PLAYBACK = "Playback"
-
-
-@dataclass
-class CaptureConfig:
-    """Configuration options for capture modes (OLAT, Playback)."""
-    capture_hz: float = 30.0
 
 
 class LightStageClient:
@@ -201,7 +184,7 @@ class LightStageClient:
                 return resp["Config"]
         return resp
 
-    def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
+    def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
         """Helper to build the UpdateColourRequest payload."""
         value = to_16b(intensity)
         return {
@@ -317,7 +300,7 @@ class LightStageClient:
         light: int,
         arc: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
         go=True
     ):
         """Set colour/intensity of a single fixture."""
@@ -357,7 +340,7 @@ class LightStageClient:
         self,
         arc: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of an arc."""
         cmd = {
@@ -382,7 +365,7 @@ class LightStageClient:
     async def set_lightstage(
         self,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of entire light stage."""
         cmd = {
@@ -405,7 +388,7 @@ class LightStageClient:
         light: int,
         arc: int,
         pol: PolarizationMode = 'up',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
         go=True
     ):
         raise NotImplementedError()
@@ -427,7 +410,7 @@ class LightStageClient:
         light: int,
         arc: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ):
         raise NotImplementedError()
 
