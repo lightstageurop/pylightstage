@@ -175,3 +175,15 @@ async def test_show_pol_env_map_new_can_limit_to_rgb_or_white():
     assert all("white" not in fixture["colour"] for fixture in fixtures)
 
 
+async def test_turn_on_horizontal_arc_batches_light_index_across_arcs():
+    """The legacy horizontal arc helper means one light index across every arc."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+
+    await client.turn_on_horizontal_arc(3, color='w', intensity=(0, 0, 255))
+
+    fixtures = client._send_and_recv.call_args[0][0]["SetFixtures"]
+    assert len(fixtures) == 12
+    assert {fixture["arc_idx"] for fixture in fixtures} == set(range(12))
+    assert {fixture["light_idx"] for fixture in fixtures} == {3}
+    assert all("white" in fixture["colour"] for fixture in fixtures)
