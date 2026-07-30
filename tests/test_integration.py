@@ -8,7 +8,7 @@ will automatically skip rather than fail the test suite.
 import asyncio
 import pytest
 
-from pylightstage.client import LightStageClient, StageMode, CaptureConfig
+from pylightstage import LightStageClient, StageMode, CaptureConfig
 
 
 pytestmark = pytest.mark.integration
