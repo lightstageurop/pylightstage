@@ -221,6 +221,66 @@ class LightStageClient:
             max(0, min(65535, int(intensity[2] * scale)))
         )
 
+    @staticmethod
+    def _as_index(name: str, value: int) -> int:
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be an integer")
+        try:
+            return operator.index(value)
+        except TypeError as exc:
+            raise ValueError(f"{name} must be an integer") from exc
+
+    @classmethod
+    def _validate_arc(cls, arc: int) -> int:
+        arc_idx = cls._as_index("arc", arc)
+        if not 0 <= arc_idx < cls.NUM_ARCS:
+            raise ValueError(
+                f"arc value is not between 0 and {cls.NUM_ARCS - 1}")
+        return arc_idx
+
+    @classmethod
+    def _validate_light(cls, light: int) -> int:
+        light_idx = cls._as_index("light", light)
+        if not 0 <= light_idx < cls.LIGHTS_PER_ARC:
+            raise ValueError(
+                f"light value is not between 0 and {cls.LIGHTS_PER_ARC - 1}")
+        return light_idx
+
+    @staticmethod
+    def _validate_color(color: str) -> ColorMode:
+        if color not in ('rgb', 'w', 'rgbw'):
+            raise ValueError("color value is not one of 'rgb', 'w', or 'rgbw'")
+        return color  # type: ignore[return-value]
+
+    @staticmethod
+    def _validate_pol(pol: str) -> PolarizationMode:
+        if pol not in ('up', 'cp', 'pp'):
+            raise ValueError(
+                "pol (polarization) value is not one of 'up', 'cp', 'pp'")
+        return pol  # type: ignore[return-value]
+
+    @staticmethod
+    def _validate_intensity(intensity: Any) -> Tuple[float, float, float]:
+        try:
+            values = tuple(float(value) for value in intensity)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("intensity must contain three numeric values") from exc
+
+        if len(values) != 3:
+            raise ValueError("intensity must contain three numeric values")
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("intensity values must be finite")
+        if min(values) < 0.0 or max(values) > 255.0:
+            raise ValueError("intensity values are not between 0 and 255")
+        return values
+
+    @staticmethod
+    def _validate_scale(scale: float) -> float:
+        scale_value = float(scale)
+        if not math.isfinite(scale_value) or not 0.0 <= scale_value <= 1.0:
+            raise ValueError("scale value is not between 0.0 and 1.0")
+        return scale_value
+
     def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
         """Helper to build the UpdateColourRequest payload."""
         value = self._to_16b(intensity)
