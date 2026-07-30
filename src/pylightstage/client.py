@@ -10,6 +10,8 @@ from typing import Any, Callable, Dict, Literal, Optional, Tuple, Union
 import cbor2
 import websockets
 
+from .utils import to_16b
+
 logger = logging.getLogger("LightStageClient")
 
 ColorMode = Literal['rgb', 'w', 'rgbw']
@@ -199,27 +201,9 @@ class LightStageClient:
                 return resp["Config"]
         return resp
 
-    @staticmethod
-    def _to_16b(
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
-    ) -> Tuple[int, int, int]:
-        """
-        Utility to scale 0.0-255.0 inputs to uint16 (0-65535).
-
-        This exists because the old library (lightstage.py) exposed 8-bit inputs,
-        and this library tries to replicate this as closely as possible,
-        while the new light stage server expects 16-bit.
-        """
-        scale = 65535.0 / 255.0
-        return (
-            max(0, min(65535, int(intensity[0] * scale))),
-            max(0, min(65535, int(intensity[1] * scale))),
-            max(0, min(65535, int(intensity[2] * scale)))
-        )
-
     def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
         """Helper to build the UpdateColourRequest payload."""
-        value = self._to_16b(intensity)
+        value = to_16b(intensity)
         return {
             **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
             **({"white": value} if color in ('w', 'rgbw') else {}),
