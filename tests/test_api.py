@@ -68,6 +68,22 @@ async def test_turn_on_light_immediate():
     assert "white" not in cmd["SetFixture"]["colour"]
 
 
+async def test_pending_updates_merge_colour_channels():
+    """RGB and white updates for one fixture should not overwrite each other."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+
+    await client.turn_on_light(light=1, arc=0, color='rgb',
+                               intensity=(255, 0, 0), go=False)
+    await client.turn_on_light(light=1, arc=0, color='w',
+                               intensity=(0, 255, 0), go=False)
+    await client.go()
+
+    fixture = client._send_and_recv.call_args[0][0]["SetFixtures"][0]
+    assert fixture["colour"]["rgb"] == (65535, 0, 0)
+    assert fixture["colour"]["white"] == (0, 65535, 0)
+
+
 async def test_batching_updates_with_go():
     """Verify that go=False buffers light updates until go() is explicitly called."""
     client = LightStageClient()
