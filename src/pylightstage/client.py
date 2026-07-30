@@ -296,6 +296,16 @@ class LightStageClient:
         current = self._pending_updates.setdefault(key, {})
         current.update(colour_req)
 
+    def _iter_env_map_values(self, env_map: Any, scale: float):
+        if getattr(env_map, "shape", None) != (self.NUM_ARCS * self.LIGHTS_PER_ARC, 3):
+            raise ValueError(
+                f"env_map shape is not ({self.NUM_ARCS * self.LIGHTS_PER_ARC}, 3)")
+
+        scale_value = self._validate_scale(scale)
+        for value in env_map:
+            intensity = self._validate_intensity(value)
+            yield tuple(channel * scale_value for channel in intensity)
+
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
         if not self._pending_updates:
