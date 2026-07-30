@@ -291,6 +291,11 @@ class LightStageClient:
             **({"white": value} if color in ('w', 'rgbw') else {}),
         }
 
+    def _queue_update(self, arc: int, light: int, colour_req: dict):
+        key = (arc, light)
+        current = self._pending_updates.setdefault(key, {})
+        current.update(colour_req)
+
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
         if not self._pending_updates:
@@ -408,11 +413,11 @@ class LightStageClient:
         colour_req = self._build_color_req(color, intensity)
 
         if not go:
-            self._pending_updates[(arc, light)] = colour_req
+            self._queue_update(arc, light, colour_req)
             return
 
         if self._pending_updates:
-            self._pending_updates[(arc, light)] = colour_req
+            self._queue_update(arc, light, colour_req)
             await self.go()
         else:
             cmd = {
