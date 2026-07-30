@@ -308,6 +308,18 @@ class LightStageClient:
             intensity = self._validate_intensity(value)
             yield tuple(channel * scale_value for channel in intensity)
 
+    @classmethod
+    def _polarized_color(cls, light: int, arc: int, pol: PolarizationMode) -> ColorMode:
+        pol = cls._validate_pol(pol)
+        if pol == 'up':
+            return 'rgbw'
+
+        uses_vertical_rgb = (
+            arc % 2 == 0) == (light in cls._VERTICAL_RGB_LIGHTS)
+        if pol == 'pp':
+            return 'rgb' if uses_vertical_rgb else 'w'
+        return 'w' if uses_vertical_rgb else 'rgb'
+
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
         if not self._pending_updates:
@@ -514,7 +526,11 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
         go=True
     ):
-        pass
+        """Set one polarized logical fixture."""
+        light = self._validate_light(light)
+        arc = self._validate_arc(arc)
+        color = self._polarized_color(light, arc, pol)
+        await self.turn_on_light(light, arc, color, intensity, go)
 
     async def turn_off_pol_light(
         self,
