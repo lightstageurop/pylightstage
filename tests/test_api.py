@@ -118,3 +118,22 @@ async def test_arc_and_lightstage_commands():
     await client.turn_on_lightstage(color='rgbw')
     cmd = client._send_and_recv.call_args[0][0]
     assert "SetLightstage" in cmd
+
+
+async def test_polarized_light_routes_to_expected_fixture_type():
+    """Polarization modes choose the RGB or white fixture for each logical light."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+
+    await client.turn_on_pol_light(light=0, arc=0, pol='pp',
+                                   intensity=(255, 0, 0))
+    cmd = client._send_and_recv.call_args[0][0]
+    assert "rgb" in cmd["SetFixture"]["colour"]
+    assert "white" not in cmd["SetFixture"]["colour"]
+
+    client._send_and_recv.reset_mock()
+    await client.turn_on_pol_light(light=0, arc=0, pol='cp',
+                                   intensity=(255, 0, 0))
+    cmd = client._send_and_recv.call_args[0][0]
+    assert "white" in cmd["SetFixture"]["colour"]
+    assert "rgb" not in cmd["SetFixture"]["colour"]
