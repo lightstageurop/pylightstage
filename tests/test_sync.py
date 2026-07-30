@@ -15,8 +15,7 @@ from pylightstage.client import LightStageSyncClient
 pytestmark = pytest.mark.unit
 
 
-@patch("pylightstage.client.websockets.connect", new_callable=AsyncMock)
-def test_sync_client_lifecycle_and_methods(mock_connect):
+def test_sync_client_lifecycle_and_methods():
     """Test that the Sync client correctly spawns a thread and proxies async calls."""
 
     class FakeWebsocket:
@@ -34,19 +33,25 @@ def test_sync_client_lifecycle_and_methods(mock_connect):
                     pass  # Handle client shutdown cleanly
             return receiver()
 
-    mock_connect.return_value = FakeWebsocket()
+    connect_calls = []
 
-    with LightStageSyncClient("ws://sync_test") as sync_client:
-        assert sync_client._thread.is_alive()
-        assert sync_client.is_connected
+    async def fake_connect(uri):
+        connect_calls.append(uri)
+        return FakeWebsocket()
 
-        # Mock the internal send_and_recv on the underlying async client
-        sync_client._client._send_and_recv = AsyncMock(
-            return_value={"arcs": 10})
+    with patch("pylightstage.client.websockets.connect", new=fake_connect):
+        with LightStageSyncClient("ws://sync_test") as sync_client:
+            assert sync_client._thread.is_alive()
+            assert sync_client.is_connected
+            assert connect_calls == ["ws://sync_test"]
 
-        # Call an async method synchronously
-        result = sync_client.get_config()
-        assert result == {"arcs": 10}
+            # Mock the internal send_and_recv on the underlying async client
+            sync_client._client._send_and_recv = AsyncMock(
+                return_value={"arcs": 10})
+
+            # Call an async method synchronously
+            result = sync_client.get_config()
+            assert result == {"arcs": 10}
 
     # Exiting the 'with' block should shut down the thread cleanly
     assert not sync_client._thread.is_alive()
