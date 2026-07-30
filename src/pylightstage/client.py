@@ -605,6 +605,8 @@ class LightStageSyncClient:
 
     def _run(self, coro):
         """Allows running an async coroutine from the synchronous thread."""
+        if self._loop is None:
+            raise RuntimeError("Synchronous client event loop is not running.")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result()  # block until coroutine returns
 
@@ -615,6 +617,7 @@ class LightStageSyncClient:
         try:
             self._run(self._client.close())
         finally:
+            assert self._loop is not None
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join()
 
