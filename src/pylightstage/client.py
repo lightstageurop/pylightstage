@@ -408,7 +408,7 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
         go=True
     ):
-        pass
+        raise NotImplementedError()
 
     async def clear_pol_light(
         self,
@@ -429,7 +429,7 @@ class LightStageClient:
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
     ):
-        pass
+        raise NotImplementedError()
 
     async def clear_horizontal_arc(
         self,
