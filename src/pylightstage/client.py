@@ -312,7 +312,7 @@ class LightStageClient:
         """Trigger a camera capture in manual mode."""
         await self._send_and_recv("ManualTrigger")
 
-    async def turn_on_light(
+    async def set_light(
         self,
         light: int,
         arc: int,
@@ -340,7 +340,7 @@ class LightStageClient:
             }
             await self._send_and_recv(cmd)
 
-    async def turn_off_light(
+    async def clear_light(
         self,
         light: int,
         arc: int,
@@ -350,7 +350,10 @@ class LightStageClient:
         """Turn off a single fixture."""
         await self.turn_on_light(light, arc, color, (0, 0, 0), go)
 
-    async def turn_on_arc(
+    turn_on_light = set_light
+    turn_off_light = clear_light
+
+    async def set_arc(
         self,
         arc: int,
         color: ColorMode = 'rgbw',
@@ -365,7 +368,7 @@ class LightStageClient:
         }
         await self._send_and_recv(cmd)
 
-    async def turn_off_arc(
+    async def clear_arc(
         self,
         arc: int,
         color: ColorMode = 'rgbw',
@@ -373,7 +376,10 @@ class LightStageClient:
         """Turn off an arc."""
         await self.turn_on_arc(arc, color, (0, 0, 0))
 
-    async def turn_on_lightstage(
+    turn_on_arc = set_arc
+    turn_off_arc = clear_arc
+
+    async def set_lightstage(
         self,
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
@@ -384,14 +390,17 @@ class LightStageClient:
         }
         await self._send_and_recv(cmd)
 
-    async def turn_off_lightstage(
+    async def clear_lightstage(
         self,
         color: ColorMode = 'rgbw',
     ):
         """Turn off entire lightstage"""
         await self.turn_on_lightstage(color, (0, 0, 0))
 
-    async def turn_on_pol_light(
+    turn_on_lightstage = set_lightstage
+    turn_off_lightstage = clear_lightstage
+
+    async def set_pol_light(
         self,
         light: int,
         arc: int,
@@ -401,7 +410,7 @@ class LightStageClient:
     ):
         pass
 
-    async def turn_off_pol_light(
+    async def clear_pol_light(
         self,
         light: int,
         arc: int,
@@ -410,7 +419,10 @@ class LightStageClient:
     ):
         await self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
 
-    async def turn_on_horizontal_arc(
+    turn_on_pol_light = set_pol_light
+    turn_off_pol_light = clear_pol_light
+
+    async def set_horizontal_arc(
         self,
         light: int,
         arc: int,
@@ -419,13 +431,16 @@ class LightStageClient:
     ):
         pass
 
-    async def turn_off_horizontal_arc(
+    async def clear_horizontal_arc(
         self,
         light: int,
         arc: int,
         color: ColorMode = 'rgbw',
     ):
         await self.turn_on_horizontal_arc(light, arc, color, (0, 0, 0))
+
+    turn_on_horizontal_arc = set_horizontal_arc
+    turn_off_horizontal_arc = clear_horizontal_arc
 
 
 class LightStageSyncClient:
