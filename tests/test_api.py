@@ -28,6 +28,29 @@ async def test_get_config_and_mode():
     assert calls[1][0][0] == "GetMode"
 
 
+async def test_set_mode_payloads():
+    """Test mode requests are encoded as Rust tagged enum payloads."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+
+    await client.set_mode(StageMode.MANUAL)
+    assert client._send_and_recv.call_args[0][0] == {
+        "SetMode": {"type": "Manual"}
+    }
+
+    client._send_and_recv.reset_mock()
+    await client.set_mode({"type": StageMode.DEMO})
+    assert client._send_and_recv.call_args[0][0] == {
+        "SetMode": {"type": "Demo"}
+    }
+
+    client._send_and_recv.reset_mock()
+    await client.set_mode_olat(25.0)
+    assert client._send_and_recv.call_args[0][0] == {
+        "SetMode": {"type": "OLAT", "config": {"capture_hz": 25.0}}
+    }
+
+
 async def test_turn_on_light_immediate():
     """Test setting a single light sends an immediate request if batching is skipped."""
     client = LightStageClient()
