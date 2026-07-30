@@ -31,6 +31,10 @@ class CaptureConfig:
 
 
 class LightStageClient:
+    NUM_ARCS = 12
+    LIGHTS_PER_ARC = 14
+    _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
+
     def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
         """Initialise the Light Stage Client."""
         self._uri = uri
