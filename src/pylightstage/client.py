@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 import cbor2
 import websockets
 
-from .models import StageMode, FixtureIntensity
+from .models import FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
 from .utils import to_16b
 
 logger = logging.getLogger("LightStageClient")
@@ -182,6 +182,17 @@ class LightStageClient:
             # WsResponse::Config
             if "Config" in resp:
                 return resp["Config"]
+            # WsResponse::Sequence
+            if "Sequence" in resp:
+                seq = resp["Sequence"]
+                return SequenceSummary(**seq) if isinstance(seq, dict) else seq
+            # WsResponse::SequenceList
+            if "SequenceList" in resp:
+                seq_list = resp["SequenceList"]
+                return [
+                    SequenceSummary(**s) if isinstance(s, dict) else s
+                    for s in seq_list
+                ]
         return resp
 
     def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
@@ -208,6 +219,32 @@ class LightStageClient:
         self._pending_updates.clear()
 
         await self._send_and_recv({"SetFixtures": fixtures})
+
+    # Playback API
+
+    async def list_sequences(self) -> List[SequenceSummary]:
+        """Fetch a list of all sequence summaries from the server."""
+        return await self._send_and_recv("ListSequences")
+
+    async def get_sequence(self, sequence_id: str) -> SequenceSummary:
+        """Get summary details for a specific sequence by ULID string."""
+        return await self._send_and_recv({"GetSequence": str(sequence_id)})
+
+    async def delete_sequence(self, sequence_id: str) -> None:
+        """Delete a sequence on the server by ULID string."""
+        await self._send_and_recv({"DeleteSequence": str(sequence_id)})
+
+    async def upload_sequence(
+        self, sequence: Union[PlaybackSequence, dict], timeout: float = 60.0
+    ) -> SequenceSummary:
+        """
+        Upload a PlaybackSequence to the server.
+
+        Uses a higher default timeout (60s) to accommodate larger frame payloads.
+        """
+        payload = asdict(sequence) if isinstance(
+            sequence, PlaybackSequence) else sequence
+        return await self._send_and_recv({"UploadSequence": payload}, timeout=timeout)
 
     # Events
 
@@ -253,28 +290,41 @@ class LightStageClient:
         mode_str = await self._send_and_recv("GetMode")
         return StageMode(mode_str) if mode_str else None
 
-    async def set_mode(self, mode: Union[StageMode, str], config: Optional[Union[CaptureConfig, dict]] = None):
+    async def set_mode(
+        self,
+        mode: Union[StageMode, str],
+        config: Optional[Union[CaptureConfig, dict]] = None,
+        sequence_id: Optional[str] = None,
+    ):
         """
         Set the operation mode of the light stage.
+
+        Args:
+            mode: Target mode
+            config: Required for 'OLAT' mode
+            sequence_id: Required for 'PLAYBACK' mode
 
         Raises:
             ValueError: If no config provided for OLAT or Playback modes
         """
         mode_str = mode.value if isinstance(mode, StageMode) else mode
 
-        if mode_str in ("OLAT", "Playback") and config is None:
-            raise ValueError(
-                f"CaptureConfig is required when setting mode to '{mode_str}'.")
+        payload: dict[str, Any] = {"type": mode_str}
 
-        config_payload = asdict(config) if isinstance(
-            config, CaptureConfig) else config
+        if mode_str == "OLAT":
+            if config is None:
+                raise ValueError(
+                    f"CaptureConfig is required when setting mode to 'OLAT'.")
+                payload["config"] = asdict(config) if isinstance(
+                    config, CaptureConfig) else config
 
-        cmd = {
-            "SetMode": {
-                "type": mode_str,
-                "config": config_payload
-            }
-        }
+        elif mode_str == "Playback":
+            if sequence_id is None:
+                raise ValueError(
+                    "sequence_id is required when setting mode to 'PLAYBACK'.")
+            payload["id"] = sequence_id
+
+        cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
 
     async def set_mode_demo(self):

@@ -5,7 +5,7 @@
 
 [project]
   authors = [{ name = "Thomas Aldrian", email = "thomas.aldrian24@imperial.ac.uk" }]
-  dependencies = ["cbor2", "websockets"]
+  dependencies = ["cbor2", "websockets", "zstandard"]
   license = { text = "MIT" }
   name = "pylightstage"
   version = "0.1.0"
