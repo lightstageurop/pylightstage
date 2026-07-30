@@ -544,19 +544,22 @@ class LightStageClient:
     async def turn_on_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = 'rgbw',
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
     ):
-        pass
+        """Set the same light index across all arcs."""
+        light = self._validate_light(light)
+        color = self._validate_color(color)
+        for arc in range(self.NUM_ARCS):
+            await self.turn_on_light(light, arc, color, intensity, go=False)
+        await self.go()
 
     async def turn_off_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = 'rgbw',
     ):
-        await self.turn_on_horizontal_arc(light, arc, color, (0, 0, 0))
+        await self.turn_on_horizontal_arc(light, color=color, intensity=(0, 0, 0))
 
 
 class LightStageSyncClient:
