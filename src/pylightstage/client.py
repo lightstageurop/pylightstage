@@ -357,28 +357,42 @@ class LightStageClient:
         mode_str = await self._send_and_recv("GetMode")
         return StageMode(mode_str) if mode_str else None
 
-    async def set_mode(self, mode: Union[StageMode, str], config: Optional[Union[CaptureConfig, dict]] = None):
+    @staticmethod
+    def _config_payload(config: Optional[Union[CaptureConfig, dict]]) -> Optional[dict]:
+        return asdict(config) if isinstance(config, CaptureConfig) else config
+
+    @classmethod
+    def _mode_request(cls, mode: Union[StageMode, str, dict], config: Optional[Union[CaptureConfig, dict]]) -> dict:
+        if isinstance(mode, dict):
+            cmd = dict(mode)
+            mode_type = cmd.get("type")
+            if isinstance(mode_type, StageMode):
+                mode_type = mode_type.value
+                cmd["type"] = mode_type
+            if isinstance(cmd.get("config"), CaptureConfig):
+                cmd["config"] = asdict(cmd["config"])
+            if config is not None:
+                cmd["config"] = cls._config_payload(config)
+        else:
+            mode_type = mode.value if isinstance(mode, StageMode) else mode
+            cmd = {"type": mode_type}
+            config_payload = cls._config_payload(config)
+            if config_payload is not None:
+                cmd["config"] = config_payload
+
+        if cmd.get("type") in ("OLAT", "Playback") and "config" not in cmd:
+            raise ValueError(
+                f"CaptureConfig is required when setting mode to '{cmd.get('type')}'.")
+        return cmd
+
+    async def set_mode(self, mode: Union[StageMode, str, dict], config: Optional[Union[CaptureConfig, dict]] = None):
         """
         Set the operation mode of the light stage.
 
         Raises:
             ValueError: If no config provided for OLAT or Playback modes
         """
-        mode_str = mode.value if isinstance(mode, StageMode) else mode
-
-        if mode_str in ("OLAT", "Playback") and config is None:
-            raise ValueError(
-                f"CaptureConfig is required when setting mode to '{mode_str}'.")
-
-        config_payload = asdict(config) if isinstance(
-            config, CaptureConfig) else config
-
-        cmd = {
-            "SetMode": {
-                "type": mode_str,
-                "config": config_payload
-            }
-        }
+        cmd = {"SetMode": self._mode_request(mode, config)}
         return await self._send_and_recv(cmd)
 
     async def set_mode_demo(self):
