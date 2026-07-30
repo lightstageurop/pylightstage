@@ -574,7 +574,7 @@ class LightStageSyncClient:
         # Underlying async implementation
         self._client = LightStageClient(*args, **kwargs)
 
-        self._loop = asyncio.new_event_loop()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -586,7 +586,10 @@ class LightStageSyncClient:
         self._ready.wait()
 
     def _run_loop(self):
+        self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._ready.set()
+
 
         # Tell main thread we're ready
         self._loop.call_soon_threadsafe(self._ready.set)
