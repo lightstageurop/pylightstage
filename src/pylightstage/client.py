@@ -569,6 +569,7 @@ class LightStageSyncClient:
     This class runs an asyncio event loop in a background thread,
     allowing async websocket operations to happen while exposing regular blocking methods.
     """
+    _LOOP_KEEPALIVE_SECONDS = 0.05
 
     def __init__(self, *args, **kwargs):
         # Underlying async implementation
@@ -590,9 +591,12 @@ class LightStageSyncClient:
         asyncio.set_event_loop(self._loop)
         self._ready.set()
 
+        def keepalive():
+            if self._loop is not None and not self._loop.is_closed():
+                self._loop.call_later(self._LOOP_KEEPALIVE_SECONDS, keepalive)
 
-        # Tell main thread we're ready
-        self._loop.call_soon_threadsafe(self._ready.set)
+        # Bounds callback latency on platforms where cross-thread selector wakeups are delayed.
+        self._loop.call_soon(keepalive)
 
         try:
             self._loop.run_forever()
