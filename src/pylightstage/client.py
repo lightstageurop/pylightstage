@@ -283,6 +283,8 @@ class LightStageClient:
 
     def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
         """Helper to build the UpdateColourRequest payload."""
+        color = self._validate_color(color)
+        intensity = self._validate_intensity(intensity)
         value = self._to_16b(intensity)
         return {
             **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
@@ -401,6 +403,8 @@ class LightStageClient:
         go=True
     ):
         """Set colour/intensity of a single fixture."""
+        light = self._validate_light(light)
+        arc = self._validate_arc(arc)
         colour_req = self._build_color_req(color, intensity)
 
         if not go:
@@ -437,6 +441,7 @@ class LightStageClient:
         intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of an arc."""
+        arc = self._validate_arc(arc)
         cmd = {
             "SetArc": {
                 "arc_idx": arc,
