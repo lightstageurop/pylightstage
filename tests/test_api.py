@@ -137,3 +137,41 @@ async def test_polarized_light_routes_to_expected_fixture_type():
     cmd = client._send_and_recv.call_args[0][0]
     assert "white" in cmd["SetFixture"]["colour"]
     assert "rgb" not in cmd["SetFixture"]["colour"]
+
+
+class EnvMap(list):
+    shape = (168, 3)
+
+
+async def test_show_env_map_batches_all_fixtures():
+    """Environment maps are sent as one batched update in legacy arc-major order."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+    env_map = EnvMap([[1, 2, 3] for _ in range(168)])
+
+    await client.show_env_map(env_map, color='rgb', scale=0.5)
+
+    cmd = client._send_and_recv.call_args[0][0]
+    fixtures = cmd["SetFixtures"]
+    assert len(fixtures) == 168
+    assert fixtures[0]["arc_idx"] == 0
+    assert fixtures[0]["light_idx"] == 0
+    assert fixtures[14]["arc_idx"] == 1
+    assert fixtures[14]["light_idx"] == 0
+    assert fixtures[0]["colour"]["rgb"] == (128, 257, 385)
+
+
+async def test_show_pol_env_map_new_can_limit_to_rgb_or_white():
+    """The newer polarized helper can send only the selected fixture family."""
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+    env_map = EnvMap([[255, 255, 255] for _ in range(168)])
+
+    await client.show_pol_env_map_new(env_map, pol='pp', color='rgb')
+
+    fixtures = client._send_and_recv.call_args[0][0]["SetFixtures"]
+    assert len(fixtures) == 84
+    assert all("rgb" in fixture["colour"] for fixture in fixtures)
+    assert all("white" not in fixture["colour"] for fixture in fixtures)
+
+
