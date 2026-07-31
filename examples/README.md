@@ -5,3 +5,4 @@
 | [01_basic_async.py](01_basic_async.py)    | Basic usage (with asyncio)    |
 | [02_basic_sync.py](02_basic_sync.py)      | Basic usage (sync/blocking)   |
 | [10_events.py](10_events.py)              | Server events                 |
+| [20_playback.py](20_playback.py)          | Playback mode API             |

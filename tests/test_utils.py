@@ -8,6 +8,7 @@ work correctly before any network requests are built.
 import pytest
 
 from pylightstage.client import LightStageClient
+from pylightstage.utils import to_16b
 
 
 pytestmark = pytest.mark.unit
@@ -15,10 +16,10 @@ pytestmark = pytest.mark.unit
 
 def test_to_16b_scaling():
     """Verify 8-bit float values scale correctly to 16-bit uint (0-65535)."""
-    assert LightStageClient._to_16b((0.0, 127.5, 255.0)) == (0, 32767, 65535)
+    assert to_16b((0.0, 127.5, 255.0)) == (0, 32767, 65535)
 
     # Verify clipping bounds
-    assert LightStageClient._to_16b((-10.0, 300.0, 255.0)) == (0, 65535, 65535)
+    assert to_16b((-10.0, 300.0, 255.0)) == (0, 65535, 65535)
 
 
 def test_build_color_req():

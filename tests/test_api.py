@@ -9,7 +9,7 @@ from the network layer.
 import pytest
 from unittest.mock import AsyncMock
 
-from pylightstage.client import LightStageClient, StageMode
+from pylightstage import LightStageClient, StageMode
 
 
 pytestmark = pytest.mark.unit

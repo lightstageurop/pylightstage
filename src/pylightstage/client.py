@@ -1,35 +1,20 @@
 import asyncio
 from dataclasses import asdict, dataclass
-from enum import Enum
 import functools
 import inspect
 import logging
 import math
 import operator
 import threading
-from typing import Any, Callable, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import cbor2
 import websockets
 
+from .models import FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
+from .utils import to_16b
+
 logger = logging.getLogger("LightStageClient")
-
-ColorMode = Literal['rgb', 'w', 'rgbw']
-PolarizationMode = Literal['up', 'cp', 'pp']
-
-
-class StageMode(Enum):
-    """Light stage operation modes."""
-    DEMO = "Demo"
-    MANUAL = "Manual"
-    OLAT = "OLAT"
-    PLAYBACK = "Playback"
-
-
-@dataclass
-class CaptureConfig:
-    """Configuration options for capture modes (OLAT, Playback)."""
-    capture_hz: float = 30.0
 
 
 class LightStageClient:
@@ -122,7 +107,7 @@ class LightStageClient:
 
                 elif "Event" in msg:
                     event = msg["Event"]
-                    for callback in self._event_callbacks:
+                    for callback in list(self._event_callbacks):
                         self._dispatch_callback(callback, event)
 
         except asyncio.CancelledError:
@@ -203,25 +188,18 @@ class LightStageClient:
             # WsResponse::Config
             if "Config" in resp:
                 return resp["Config"]
+            # WsResponse::Sequence
+            if "Sequence" in resp:
+                seq = resp["Sequence"]
+                return SequenceSummary(**seq) if isinstance(seq, dict) else seq
+            # WsResponse::SequenceList
+            if "SequenceList" in resp:
+                seq_list = resp["SequenceList"]
+                return [
+                    SequenceSummary(**s) if isinstance(s, dict) else s
+                    for s in seq_list
+                ]
         return resp
-
-    @staticmethod
-    def _to_16b(
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
-    ) -> Tuple[int, int, int]:
-        """
-        Utility to scale 0.0-255.0 inputs to uint16 (0-65535).
-
-        This exists because the old library (lightstage.py) exposed 8-bit inputs,
-        and this library tries to replicate this as closely as possible,
-        while the new light stage server expects 16-bit.
-        """
-        scale = 65535.0 / 255.0
-        return (
-            max(0, min(65535, int(intensity[0] * scale))),
-            max(0, min(65535, int(intensity[1] * scale))),
-            max(0, min(65535, int(intensity[2] * scale)))
-        )
 
     @staticmethod
     def _as_index(name: str, value: int) -> int:
@@ -266,7 +244,8 @@ class LightStageClient:
         try:
             values = tuple(float(value) for value in intensity)
         except (TypeError, ValueError) as exc:
-            raise ValueError("intensity must contain three numeric values") from exc
+            raise ValueError(
+                "intensity must contain three numeric values") from exc
 
         if len(values) != 3:
             raise ValueError("intensity must contain three numeric values")
@@ -283,11 +262,11 @@ class LightStageClient:
             raise ValueError("scale value is not between 0.0 and 1.0")
         return scale_value
 
-    def _build_color_req(self, color: ColorMode, intensity: Tuple[float, float, float]) -> dict:
+    def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
         """Helper to build the UpdateColourRequest payload."""
         color = self._validate_color(color)
         intensity = self._validate_intensity(intensity)
-        value = self._to_16b(intensity)
+        value = to_16b(intensity)
         return {
             **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
             **({"white": value} if color in ('w', 'rgbw') else {}),
@@ -336,6 +315,32 @@ class LightStageClient:
         await self._send_and_recv({"SetFixtures": fixtures})
         self._pending_updates.clear()
 
+    # Playback API
+
+    async def list_sequences(self) -> List[SequenceSummary]:
+        """Fetch a list of all sequence summaries from the server."""
+        return await self._send_and_recv("ListSequences")
+
+    async def get_sequence(self, sequence_id: str) -> SequenceSummary:
+        """Get summary details for a specific sequence by ULID string."""
+        return await self._send_and_recv({"GetSequence": str(sequence_id)})
+
+    async def delete_sequence(self, sequence_id: str) -> None:
+        """Delete a sequence on the server by ULID string."""
+        await self._send_and_recv({"DeleteSequence": str(sequence_id)})
+
+    async def upload_sequence(
+        self, sequence: Union[PlaybackSequence, dict], timeout: float = 60.0
+    ) -> SequenceSummary:
+        """
+        Upload a PlaybackSequence to the server.
+
+        Uses a higher default timeout (60s) to accommodate larger frame payloads.
+        """
+        payload = asdict(sequence) if isinstance(
+            sequence, PlaybackSequence) else sequence
+        return await self._send_and_recv({"UploadSequence": payload}, timeout=timeout)
+
     # Events
 
     def on_event(self, fn: Callable[[Any], None]) -> Callable[[Any], None]:
@@ -380,42 +385,46 @@ class LightStageClient:
         mode_str = await self._send_and_recv("GetMode")
         return StageMode(mode_str) if mode_str else None
 
-    @staticmethod
-    def _config_payload(config: Optional[Union[CaptureConfig, dict]]) -> Optional[dict]:
-        return asdict(config) if isinstance(config, CaptureConfig) else config
-
-    @classmethod
-    def _mode_request(cls, mode: Union[StageMode, str, dict], config: Optional[Union[CaptureConfig, dict]]) -> dict:
-        if isinstance(mode, dict):
-            cmd = dict(mode)
-            mode_type = cmd.get("type")
-            if isinstance(mode_type, StageMode):
-                mode_type = mode_type.value
-                cmd["type"] = mode_type
-            if isinstance(cmd.get("config"), CaptureConfig):
-                cmd["config"] = asdict(cmd["config"])
-            if config is not None:
-                cmd["config"] = cls._config_payload(config)
-        else:
-            mode_type = mode.value if isinstance(mode, StageMode) else mode
-            cmd = {"type": mode_type}
-            config_payload = cls._config_payload(config)
-            if config_payload is not None:
-                cmd["config"] = config_payload
-
-        if cmd.get("type") in ("OLAT", "Playback") and "config" not in cmd:
-            raise ValueError(
-                f"CaptureConfig is required when setting mode to '{cmd.get('type')}'.")
-        return cmd
-
-    async def set_mode(self, mode: Union[StageMode, str, dict], config: Optional[Union[CaptureConfig, dict]] = None):
+    async def set_mode(
+        self,
+        mode: Union[StageMode, str, dict],
+        config: Optional[Union[CaptureConfig, dict]] = None,
+        sequence_id: Optional[str] = None,
+    ):
         """
         Set the operation mode of the light stage.
+
+        Args:
+            mode: Target mode
+            config: Required for 'OLAT' mode
+            sequence_id: Required for 'PLAYBACK' mode
 
         Raises:
             ValueError: If no config provided for OLAT or Playback modes
         """
-        cmd = {"SetMode": self._mode_request(mode, config)}
+        if isinstance(mode, dict):
+            payload = mode
+
+        else:
+            mode_str = mode.value if isinstance(mode, StageMode) else mode
+            payload: dict[str, Any] = {"type": mode_str}
+
+            if mode_str == "OLAT":
+                if config is None:
+                    raise ValueError(
+                        f"CaptureConfig is required when setting mode to 'OLAT'.")
+
+                    payload["config"] = asdict(config) if isinstance(
+                        config, CaptureConfig) else config
+
+            elif mode_str == "Playback":
+                if sequence_id is None:
+                    raise ValueError(
+                        "sequence_id is required when setting mode to 'PLAYBACK'.")
+
+                payload["id"] = sequence_id
+
+        cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
 
     async def set_mode_demo(self):
@@ -436,12 +445,12 @@ class LightStageClient:
         """Trigger a camera capture in manual mode."""
         await self._send_and_recv("ManualTrigger")
 
-    async def turn_on_light(
+    async def set_light(
         self,
         light: int,
         arc: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
         go=True
     ):
         """Set colour/intensity of a single fixture."""
@@ -466,7 +475,7 @@ class LightStageClient:
             }
             await self._send_and_recv(cmd)
 
-    async def turn_off_light(
+    async def clear_light(
         self,
         light: int,
         arc: int,
@@ -476,11 +485,14 @@ class LightStageClient:
         """Turn off a single fixture."""
         await self.turn_on_light(light, arc, color, (0, 0, 0), go)
 
-    async def turn_on_arc(
+    turn_on_light = set_light
+    turn_off_light = clear_light
+
+    async def set_arc(
         self,
         arc: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of an arc."""
         arc = self._validate_arc(arc)
@@ -492,7 +504,7 @@ class LightStageClient:
         }
         await self._send_and_recv(cmd)
 
-    async def turn_off_arc(
+    async def clear_arc(
         self,
         arc: int,
         color: ColorMode = 'rgbw',
@@ -500,10 +512,13 @@ class LightStageClient:
         """Turn off an arc."""
         await self.turn_on_arc(arc, color, (0, 0, 0))
 
-    async def turn_on_lightstage(
+    turn_on_arc = set_arc
+    turn_off_arc = clear_arc
+
+    async def set_lightstage(
         self,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0)
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of entire light stage."""
         cmd = {
@@ -511,19 +526,22 @@ class LightStageClient:
         }
         await self._send_and_recv(cmd)
 
-    async def turn_off_lightstage(
+    async def clear_lightstage(
         self,
         color: ColorMode = 'rgbw',
     ):
         """Turn off entire lightstage"""
         await self.turn_on_lightstage(color, (0, 0, 0))
 
-    async def turn_on_pol_light(
+    turn_on_lightstage = set_lightstage
+    turn_off_lightstage = clear_lightstage
+
+    async def set_pol_light(
         self,
         light: int,
         arc: int,
         pol: PolarizationMode = 'up',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
         go=True
     ):
         """Set one polarized logical fixture."""
@@ -532,14 +550,17 @@ class LightStageClient:
         color = self._polarized_color(light, arc, pol)
         await self.turn_on_light(light, arc, color, intensity, go)
 
-    async def turn_off_pol_light(
+    async def clear_pol_light(
         self,
         light: int,
         arc: int,
         pol: PolarizationMode = 'up',
         go=True,
     ):
-        await self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
+        await self.set_pol_light(light, arc, pol, (0, 0, 0), go)
+
+    turn_on_pol_light = set_pol_light
+    turn_off_pol_light = clear_pol_light
 
     async def show_env_map(
         self,
@@ -595,11 +616,11 @@ class LightStageClient:
                 await self.turn_on_light(light, arc, polarized_color, value, go=False)
         await self.go()
 
-    async def turn_on_horizontal_arc(
+    async def set_horizontal_arc(
         self,
         light: int,
         color: ColorMode = 'rgbw',
-        intensity: Tuple[float, float, float] = (255.0, 255.0, 255.0),
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ):
         """Set the same light index across all arcs."""
         light = self._validate_light(light)
@@ -608,12 +629,15 @@ class LightStageClient:
             await self.turn_on_light(light, arc, color, intensity, go=False)
         await self.go()
 
-    async def turn_off_horizontal_arc(
+    async def clear_horizontal_arc(
         self,
         light: int,
         color: ColorMode = 'rgbw',
     ):
         await self.turn_on_horizontal_arc(light, color=color, intensity=(0, 0, 0))
+
+    turn_on_horizontal_arc = set_horizontal_arc
+    turn_off_horizontal_arc = clear_horizontal_arc
 
 
 class LightStageSyncClient:
@@ -655,6 +679,15 @@ class LightStageSyncClient:
         try:
             self._loop.run_forever()
         finally:
+            pending = [t for t in asyncio.all_tasks(
+                self._loop) if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True))
+
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             self._loop.close()
 
     def _run(self, coro):
