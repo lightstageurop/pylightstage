@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional, Tuple, Union
 import cbor2
 import websockets
 
-from .models import FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
+from .models import CaptureConfig, FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
 from .utils import to_16b
 
 logger = logging.getLogger("LightStageClient")
@@ -414,8 +414,8 @@ class LightStageClient:
                     raise ValueError(
                         f"CaptureConfig is required when setting mode to 'OLAT'.")
 
-                    payload["config"] = asdict(config) if isinstance(
-                        config, CaptureConfig) else config
+                payload["config"] = asdict(config) if isinstance(
+                    config, CaptureConfig) else config
 
             elif mode_str == "Playback":
                 if sequence_id is None:

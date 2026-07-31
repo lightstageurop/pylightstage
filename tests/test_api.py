@@ -39,7 +39,7 @@ async def test_set_mode_payloads():
     }
 
     client._send_and_recv.reset_mock()
-    await client.set_mode({"type": StageMode.DEMO})
+    await client.set_mode(StageMode.DEMO)
     assert client._send_and_recv.call_args[0][0] == {
         "SetMode": {"type": "Demo"}
     }
