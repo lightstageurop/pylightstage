@@ -61,7 +61,7 @@ class SequenceBuilder:
         arc = self._validate_arc(arc)
         light = self._validate_light(light)
         color = color_mode(color)
-        intensity = validate_intensity
+        intensity = validate_intensity(intensity)
 
         val_16b = to_16b(intensity)
         if color in ('rgb', 'rgbw'):
