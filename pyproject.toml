@@ -11,13 +11,13 @@
   version = "0.1.0"
 
   [project.optional-dependencies]
-    dev = ["pytest", "pytest-asyncio"]
+    dev = ["pytest", "pytest-asyncio", "pytest-cov"]
 
 [tool.setuptools.packages.find]
   where = ["src"]
 
 [tool.pytest.ini_options]
-  addopts = "-ra -q -m 'not integration'"
+  addopts = "-ra -q -m 'not integration' --cov"
   asyncio_mode = "auto"
   markers = [
     "integration: tests that require lsserver to be running",
