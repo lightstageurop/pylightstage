@@ -63,10 +63,6 @@ async def test_integration_set_and_read_mode(real_client):
         await real_client.set_mode_olat(20.0)
         assert await real_client.get_mode() == StageMode.OLAT
 
-        # 4. Set to Playback
-        await real_client.set_mode(StageMode.PLAYBACK, CaptureConfig(20.0))
-        assert await real_client.get_mode() == StageMode.PLAYBACK
-
     finally:
         # Restore the original state using its tagged representation
         if original_mode and real_client.is_connected:

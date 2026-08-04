@@ -2,7 +2,7 @@
 tests/test_sync.py
 
 Tests the synchronous wrapper client.
-Verifies that the background event loop thread is spawned, managed, 
+Verifies that the background event loop thread is spawned, managed,
 and shut down safely without hanging the main thread.
 """
 import asyncio
@@ -15,30 +15,37 @@ from pylightstage.client import LightStageSyncClient
 pytestmark = pytest.mark.unit
 
 
-@patch("pylightstage.client.websockets.connect", new_callable=AsyncMock)
+class FakeWebsocket:
+    """A simple fake websocket that safely blocks when iterated over."""
+
+    async def send(self, *args, **kwargs):
+        pass
+
+    async def close(self, *args, **kwargs):
+        pass
+
+    async def __aiter__(self):
+        try:
+            await asyncio.Event().wait()  # Block forever
+            yield
+        except asyncio.CancelledError:
+            pass  # Handle client shutdown cleanly
+
+
+@patch("pylightstage.client.websockets.connect")
 def test_sync_client_lifecycle_and_methods(mock_connect):
     """Test that the Sync client correctly spawns a thread and proxies async calls."""
 
-    class FakeWebsocket:
-        """A simple fake websocket that safely blocks when iterated over."""
+    async def fake_connect(*args, **kwargs):
+        return FakeWebsocket()
 
-        async def send(self, *args, **kwargs): pass
-        async def close(self, *args, **kwargs): pass
-
-        def __aiter__(self):
-            async def receiver():
-                try:
-                    await asyncio.sleep(3600)  # Block forever
-                    yield
-                except asyncio.CancelledError:
-                    pass  # Handle client shutdown cleanly
-            return receiver()
-
-    mock_connect.return_value = FakeWebsocket()
+    mock_connect.side_effect = fake_connect
 
     with LightStageSyncClient("ws://sync_test") as sync_client:
+        # thread lifecycle and connection
         assert sync_client._thread.is_alive()
         assert sync_client.is_connected
+        mock_connect.assert_called_once_with("ws://sync_test")
 
         # Mock the internal send_and_recv on the underlying async client
         sync_client._client._send_and_recv = AsyncMock(
@@ -47,6 +54,7 @@ def test_sync_client_lifecycle_and_methods(mock_connect):
         # Call an async method synchronously
         result = sync_client.get_config()
         assert result == {"arcs": 10}
+        sync_client._client._send_and_recv.assert_called_once()
 
     # Exiting the 'with' block should shut down the thread cleanly
     assert not sync_client._thread.is_alive()

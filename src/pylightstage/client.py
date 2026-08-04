@@ -4,23 +4,28 @@ import functools
 import inspect
 import logging
 import threading
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import cbor2
 import websockets
 
-from .models import FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
-from .utils import to_16b
+from .models import CaptureConfig, FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
+from .utils import as_index, color_mode, polarization_mode, to_16b, unit_scale, validate_index, validate_intensity
 
 logger = logging.getLogger("LightStageClient")
 
 
 class LightStageClient:
+    _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
+
     def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
         """Initialise the Light Stage Client."""
         self._uri = uri
         self._websocket = None
         self._req_id = 0
+
+        self.num_arcs = 12
+        self.lights_per_arc = 14
 
         self._event_callbacks: list[Callable[[Any], Any]] = []
         self._pending_requests: dict[int, asyncio.Future] = {}
@@ -195,13 +200,49 @@ class LightStageClient:
                 ]
         return resp
 
+    def _validate_arc(self, arc: int) -> int:
+        return validate_index("arc", arc, size=self.num_arcs)
+
+    def _validate_light(self, light: int) -> int:
+        return validate_index("light", light, size=self.lights_per_arc)
+
     def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
         """Helper to build the UpdateColourRequest payload."""
+        color = color_mode(color)
+        intensity = validate_intensity(intensity)
         value = to_16b(intensity)
         return {
             **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
             **({"white": value} if color in ('w', 'rgbw') else {}),
         }
+
+    def _queue_update(self, arc: int, light: int, colour_req: dict):
+        """Queue a colour request while allowing rgb and w requests to co-exist."""
+        key = (arc, light)
+        current = self._pending_updates.setdefault(key, {})
+        current.update(colour_req)
+
+    def _iter_env_map_values(self, env_map: Any, scale: float):
+        if getattr(env_map, "shape", None) != (self.num_arcs * self.lights_per_arc, 3):
+            raise ValueError(
+                f"env_map shape is not ({self.num_arcs * self.lights_per_arc}, 3)")
+
+        scale_value = unit_scale(scale)
+        for value in env_map:
+            intensity = validate_intensity(value)
+            yield tuple(channel * scale_value for channel in intensity)
+
+    @classmethod
+    def _polarized_color(cls, light: int, arc: int, pol: PolarizationMode) -> ColorMode:
+        pol = polarization_mode(pol)
+        if pol == 'up':
+            return 'rgbw'
+
+        uses_vertical_rgb = (
+            arc % 2 == 0) == (light in cls._VERTICAL_RGB_LIGHTS)
+        if pol == 'pp':
+            return 'rgb' if uses_vertical_rgb else 'w'
+        return 'w' if uses_vertical_rgb else 'rgb'
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
@@ -216,9 +257,8 @@ class LightStageClient:
             }
             for (arc, light), colour_req in self._pending_updates.items()
         ]
-        self._pending_updates.clear()
-
         await self._send_and_recv({"SetFixtures": fixtures})
+        self._pending_updates.clear()
 
     # Playback API
 
@@ -292,7 +332,7 @@ class LightStageClient:
 
     async def set_mode(
         self,
-        mode: Union[StageMode, str],
+        mode: Union[StageMode, str, dict],
         config: Optional[Union[CaptureConfig, dict]] = None,
         sequence_id: Optional[str] = None,
     ):
@@ -307,22 +347,27 @@ class LightStageClient:
         Raises:
             ValueError: If no config provided for OLAT or Playback modes
         """
-        mode_str = mode.value if isinstance(mode, StageMode) else mode
+        if isinstance(mode, dict):
+            payload = mode
 
-        payload: dict[str, Any] = {"type": mode_str}
+        else:
+            mode_str = mode.value if isinstance(mode, StageMode) else mode
+            payload: dict[str, Any] = {"type": mode_str}
 
-        if mode_str == "OLAT":
-            if config is None:
-                raise ValueError(
-                    f"CaptureConfig is required when setting mode to 'OLAT'.")
+            if mode_str == "OLAT":
+                if config is None:
+                    raise ValueError(
+                        f"CaptureConfig is required when setting mode to 'OLAT'.")
+
                 payload["config"] = asdict(config) if isinstance(
                     config, CaptureConfig) else config
 
-        elif mode_str == "Playback":
-            if sequence_id is None:
-                raise ValueError(
-                    "sequence_id is required when setting mode to 'PLAYBACK'.")
-            payload["id"] = sequence_id
+            elif mode_str == "Playback":
+                if sequence_id is None:
+                    raise ValueError(
+                        "sequence_id is required when setting mode to 'PLAYBACK'.")
+
+                payload["id"] = sequence_id
 
         cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
@@ -354,14 +399,16 @@ class LightStageClient:
         go=True
     ):
         """Set colour/intensity of a single fixture."""
+        light = self._validate_light(light)
+        arc = self._validate_arc(arc)
         colour_req = self._build_color_req(color, intensity)
 
         if not go:
-            self._pending_updates[(arc, light)] = colour_req
+            self._queue_update(arc, light, colour_req)
             return
 
         if self._pending_updates:
-            self._pending_updates[(arc, light)] = colour_req
+            self._queue_update(arc, light, colour_req)
             await self.go()
         else:
             cmd = {
@@ -393,6 +440,7 @@ class LightStageClient:
         intensity: FixtureIntensity = (255.0, 255.0, 255.0)
     ):
         """Set colour/intensity of an arc."""
+        arc = self._validate_arc(arc)
         cmd = {
             "SetArc": {
                 "arc_idx": arc,
@@ -441,7 +489,11 @@ class LightStageClient:
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
         go=True
     ):
-        raise NotImplementedError()
+        """Set one polarized logical fixture."""
+        light = self._validate_light(light)
+        arc = self._validate_arc(arc)
+        color = self._polarized_color(light, arc, pol)
+        await self.turn_on_light(light, arc, color, intensity, go)
 
     async def clear_pol_light(
         self,
@@ -450,27 +502,66 @@ class LightStageClient:
         pol: PolarizationMode = 'up',
         go=True,
     ):
-        await self.turn_on_pol_light(light, arc, pol, (0, 0, 0), go)
+        await self.set_pol_light(light, arc, pol, (0, 0, 0), go)
 
     turn_on_pol_light = set_pol_light
     turn_off_pol_light = clear_pol_light
 
+    async def show_env_map(
+        self,
+        env_map: Any,
+        color: ColorMode = 'rgb',
+        scale: float = 1.0
+    ):
+        """Show a (`num_arcs * lights_per_arc`)x3 environment map, ordered by arc then light."""
+        color = color_mode(color)
+        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
+            light = i % self.lights_per_arc
+            arc = i // self.lights_per_arc
+            await self.turn_on_light(light, arc, color, value, go=False)
+        await self.go()
+
+    async def show_pol_env_map(
+        self,
+        env_map: Any,
+        pol: PolarizationMode = 'up',
+        color: ColorMode = 'rgbw',
+        scale: float = 1.0
+    ):
+        """Show a 168x3 polarized environment, optionally limited to RGB or white fixtures."""
+        pol = polarization_mode(pol)
+        color = color_mode(color)
+        if pol == 'up':
+            await self.show_env_map(env_map, color, scale)
+            return
+
+        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
+            light = i % self.lights_per_arc
+            arc = i // self.lights_per_arc
+            polarized_color = self._polarized_color(light, arc, pol)
+            if color == 'rgbw' or color == polarized_color:
+                await self.turn_on_light(light, arc, polarized_color, value, go=False)
+        await self.go()
+
     async def set_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = 'rgbw',
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ):
-        raise NotImplementedError()
+        """Set the same light index across all arcs."""
+        light = self._validate_light(light)
+        color = color_mode(color)
+        for arc in range(self.num_arcs):
+            await self.turn_on_light(light, arc, color, intensity, go=False)
+        await self.go()
 
     async def clear_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = 'rgbw',
     ):
-        await self.turn_on_horizontal_arc(light, arc, color, (0, 0, 0))
+        await self.turn_on_horizontal_arc(light, color, (0, 0, 0))
 
     turn_on_horizontal_arc = set_horizontal_arc
     turn_off_horizontal_arc = clear_horizontal_arc
@@ -483,12 +574,13 @@ class LightStageSyncClient:
     This class runs an asyncio event loop in a background thread,
     allowing async websocket operations to happen while exposing regular blocking methods.
     """
+    _LOOP_KEEPALIVE_SECONDS = 0.05
 
     def __init__(self, *args, **kwargs):
         # Underlying async implementation
         self._client = LightStageClient(*args, **kwargs)
 
-        self._loop = asyncio.new_event_loop()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -500,10 +592,16 @@ class LightStageSyncClient:
         self._ready.wait()
 
     def _run_loop(self):
+        self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._ready.set()
 
-        # Tell main thread we're ready
-        self._loop.call_soon_threadsafe(self._ready.set)
+        def keepalive():
+            if self._loop is not None and not self._loop.is_closed():
+                self._loop.call_later(self._LOOP_KEEPALIVE_SECONDS, keepalive)
+
+        # Bounds callback latency on platforms where cross-thread selector wakeups are delayed.
+        self._loop.call_soon(keepalive)
 
         try:
             self._loop.run_forever()
@@ -521,6 +619,8 @@ class LightStageSyncClient:
 
     def _run(self, coro):
         """Allows running an async coroutine from the synchronous thread."""
+        if self._loop is None:
+            raise RuntimeError("Synchronous client event loop is not running.")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result()  # block until coroutine returns
 
@@ -531,6 +631,7 @@ class LightStageSyncClient:
         try:
             self._run(self._client.close())
         finally:
+            assert self._loop is not None
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join()
 
