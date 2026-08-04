@@ -1,8 +1,13 @@
 import copy
 from typing import Self, Tuple
 
-from .models import ColorMode, PolarizationMode
-from .models import FixtureIntensity, PlaybackSequence, StageFrame
+from .models import (
+    ColorMode,
+    FixtureIntensity,
+    PlaybackSequence,
+    PolarizationMode,
+    StageFrame,
+)
 from .utils import color_mode, to_16b, validate_index, validate_intensity
 
 
@@ -15,7 +20,7 @@ class SequenceBuilder:
         capture_hz: float = 30.0,
         num_arcs: int = 12,
         lights_per_arc: int = 14,
-        auto_clear: bool = False
+        auto_clear: bool = False,
     ):
         """
         Initialise a builder.
@@ -39,10 +44,12 @@ class SequenceBuilder:
 
         self.frames: list[StageFrame] = []
 
-        self._current_white = [[(0, 0, 0) for _ in range(
-            lights_per_arc)] for _ in range(num_arcs)]
-        self._current_rgb = [[(0, 0, 0) for _ in range(
-            lights_per_arc)] for _ in range(num_arcs)]
+        self._current_white = [
+            [(0, 0, 0) for _ in range(lights_per_arc)] for _ in range(num_arcs)
+        ]
+        self._current_rgb = [
+            [(0, 0, 0) for _ in range(lights_per_arc)] for _ in range(num_arcs)
+        ]
 
     def _validate_arc(self, arc: int) -> int:
         return validate_index("arc", arc, size=self.num_arcs)
@@ -54,7 +61,7 @@ class SequenceBuilder:
         self,
         light: int,
         arc: int,
-        color: ColorMode = 'rgbw',
+        color: ColorMode = "rgbw",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         """Set colour/intensity of a single fixture for current frame."""
@@ -64,19 +71,14 @@ class SequenceBuilder:
         intensity = validate_intensity(intensity)
 
         val_16b = to_16b(intensity)
-        if color in ('rgb', 'rgbw'):
+        if color in ("rgb", "rgbw"):
             self._current_rgb[arc][light] = val_16b
-        if color in ('w', 'rgbw'):
+        if color in ("w", "rgbw"):
             self._current_white[arc][light] = val_16b
 
         return self
 
-    def clear_light(
-        self,
-        light: int,
-        arc: int,
-        color: ColorMode = 'rgbw'
-    ) -> Self:
+    def clear_light(self, light: int, arc: int, color: ColorMode = "rgbw") -> Self:
         """Turn off a single fixture for current frame."""
         return self.set_light(light, arc, color, (0, 0, 0))
 
@@ -86,8 +88,8 @@ class SequenceBuilder:
     def set_arc(
         self,
         arc: int,
-        color: ColorMode = 'rgbw',
-        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
+        color: ColorMode = "rgbw",
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         """Set colour/intensity of an arc for current frame."""
         for light in range(self.lights_per_arc):
@@ -98,7 +100,7 @@ class SequenceBuilder:
     def clear_arc(
         self,
         arc: int,
-        color: ColorMode = 'rgbw',
+        color: ColorMode = "rgbw",
     ) -> Self:
         """Turn off an arc for current frame."""
         return self.set_arc(arc, color, (0, 0, 0))
@@ -108,8 +110,8 @@ class SequenceBuilder:
 
     def set_lightstage(
         self,
-        color: ColorMode = 'rgbw',
-        intensity: FixtureIntensity = (255.0, 255.0, 255.0)
+        color: ColorMode = "rgbw",
+        intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         """Set colour/intensity of entire light stage for current frame."""
         for arc in range(self.num_arcs):
@@ -119,7 +121,7 @@ class SequenceBuilder:
 
     def clear_lightstage(
         self,
-        color: ColorMode = 'rgbw',
+        color: ColorMode = "rgbw",
     ) -> Self:
         """Turn off entire lightstage for current frame."""
         return self.set_lightstage(color, (0, 0, 0))
@@ -131,7 +133,7 @@ class SequenceBuilder:
         self,
         light: int,
         arc: int,
-        pol: PolarizationMode = 'up',
+        pol: PolarizationMode = "up",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         raise NotImplementedError()
@@ -140,7 +142,7 @@ class SequenceBuilder:
         self,
         light: int,
         arc: int,
-        pol: PolarizationMode = 'up',
+        pol: PolarizationMode = "up",
     ) -> Self:
         self.turn_on_pol_light(light, arc, pol, (0, 0, 0))
         return self
@@ -152,7 +154,7 @@ class SequenceBuilder:
         self,
         light: int,
         arc: int,
-        color: ColorMode = 'rgbw',
+        color: ColorMode = "rgbw",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         raise NotImplementedError()
@@ -161,7 +163,7 @@ class SequenceBuilder:
         self,
         light: int,
         arc: int,
-        color: ColorMode = 'rgbw',
+        color: ColorMode = "rgbw",
     ) -> Self:
         return self.set_horizontal_arc(light, arc, color, (0, 0, 0))
 
@@ -178,7 +180,7 @@ class SequenceBuilder:
         frame = StageFrame(
             # python is a fake language
             white_fixtures=copy.deepcopy(self._current_white),
-            rgb_fixtures=copy.deepcopy(self._current_rgb)
+            rgb_fixtures=copy.deepcopy(self._current_rgb),
         )
         self.frames.append(frame)
 
@@ -190,13 +192,13 @@ class SequenceBuilder:
     def build(self) -> PlaybackSequence:
         """Builds and returns the playback sequence."""
         return PlaybackSequence(
-            name=self.name,
-            capture_hz=self.capture_hz,
-            frames=list(self.frames)
+            name=self.name, capture_hz=self.capture_hz, frames=list(self.frames)
         )
 
     @classmethod
-    def from_sequence(cls, sequence: PlaybackSequence, auto_clear: bool = False) -> "SequenceBuilder":
+    def from_sequence(
+        cls, sequence: PlaybackSequence, auto_clear: bool = False
+    ) -> "SequenceBuilder":
         """
         Creates a builder from an existing playback sequence.
 
@@ -215,7 +217,7 @@ class SequenceBuilder:
             capture_hz=sequence.capture_hz,
             num_arcs=num_arcs,
             lights_per_arc=lights_per_arc,
-            auto_clear=auto_clear
+            auto_clear=auto_clear,
         )
 
         builder.frames = list(sequence.frames)

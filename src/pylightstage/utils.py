@@ -2,12 +2,7 @@ import math
 import operator
 from typing import Iterable, Tuple
 
-from .models import (
-    ColorMode,
-    FixtureIntensity,
-    FixtureValue,
-    PolarizationMode
-)
+from .models import ColorMode, FixtureIntensity, FixtureValue, PolarizationMode
 
 
 def as_index(name: str, value: int) -> int:
@@ -27,15 +22,14 @@ def validate_index(name: str, value: int, *, size: int) -> int:
 
 
 def color_mode(color: str) -> ColorMode:
-    if color not in ('rgb', 'w', 'rgbw'):
+    if color not in ("rgb", "w", "rgbw"):
         raise ValueError("color value is not one of 'rgb', 'w', or 'rgbw'")
     return color  # type: ignore[return-value]
 
 
 def polarization_mode(pol: str) -> PolarizationMode:
-    if pol not in ('up', 'cp', 'pp'):
-        raise ValueError(
-            "pol (polarization) value is not one of 'up', 'cp', 'pp'")
+    if pol not in ("up", "cp", "pp"):
+        raise ValueError("pol (polarization) value is not one of 'up', 'cp', 'pp'")
     return pol  # type: ignore[return-value]
 
 
@@ -50,8 +44,7 @@ def validate_intensity(intensity: Iterable[float]) -> Tuple[float, float, float]
     try:
         values = tuple(float(value) for value in intensity)
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "intensity must contain three numeric values") from exc
+        raise ValueError("intensity must contain three numeric values") from exc
 
     if len(values) != 3:
         raise ValueError("intensity must contain exactly three numeric values")
@@ -77,5 +70,5 @@ def to_16b(
     return (
         max(0, min(65535, int(intensity[0] * scale))),
         max(0, min(65535, int(intensity[1] * scale))),
-        max(0, min(65535, int(intensity[2] * scale)))
+        max(0, min(65535, int(intensity[2] * scale))),
     )

@@ -1,5 +1,4 @@
 from .client import LightStageClient, LightStageSyncClient
-from .sequences import SequenceBuilder
 from .models import (
     CaptureConfig,
     PlaybackSequence,
@@ -7,7 +6,7 @@ from .models import (
     StageFrame,
     StageMode,
 )
-
+from .sequences import SequenceBuilder
 
 __all__ = [
     "LightStageClient",

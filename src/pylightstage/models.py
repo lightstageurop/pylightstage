@@ -13,12 +13,13 @@ FixtureIntensity: TypeAlias = Tuple[float, float, float]
 FixtureValue = Tuple[int, int, int]
 
 # Selectors for set_(light/arc/lightstage) methods
-ColorMode = Literal['rgb', 'w', 'rgbw']
-PolarizationMode = Literal['up', 'cp', 'pp']
+ColorMode = Literal["rgb", "w", "rgbw"]
+PolarizationMode = Literal["up", "cp", "pp"]
 
 
 class StageMode(Enum):
     """Light stage operation modes."""
+
     DEMO = "Demo"
     MANUAL = "Manual"
     OLAT = "OLAT"
@@ -28,12 +29,14 @@ class StageMode(Enum):
 @dataclass
 class CaptureConfig:
     """Configuration options for capture modes (OLAT, Playback)."""
+
     capture_hz: float = 30.0
 
 
 @dataclass(frozen=True)
 class SequenceSummary:
     """Metadata about a playback sequence."""
+
     id: str
     name: str
     capture_hz: float
@@ -44,26 +47,24 @@ class SequenceSummary:
 @dataclass(frozen=True)
 class StageFrame:
     """A single frame, capturing the states of all white and colour fixtures on the light stage."""
+
     white_fixtures: List[List[FixtureValue]] = field(default_factory=list)
     rgb_fixtures: List[List[FixtureValue]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "white_fixtures": self.white_fixtures,
-            "rgb_fixtures": self.rgb_fixtures
+            "rgb_fixtures": self.rgb_fixtures,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StageFrame":
         def normalise(grid: Any) -> List[List[FixtureValue]]:
-            return [
-                [tuple(val) for val in row]
-                for row in (grid or [])
-            ]
+            return [[tuple(val) for val in row] for row in (grid or [])]
 
         return cls(
             white_fixtures=normalise(data.get("white_fixtures", [])),
-            rgb_fixtures=normalise(data.get("rgb_fixtures", []))
+            rgb_fixtures=normalise(data.get("rgb_fixtures", [])),
         )
 
 
@@ -75,6 +76,7 @@ class PlaybackSequence:
     Can be constructed using a SequenceBuilder, and loaded from / stored to disk as either
     compressed or uncompressed CBOR data.
     """
+
     name: str
     capture_hz: float
     frames: List[StageFrame] = field(default_factory=list)
@@ -94,14 +96,14 @@ class PlaybackSequence:
             name=self.name,
             capture_hz=self.capture_hz,
             total_frames=self.total_frames,
-            duration_secs=self.duration_secs
+            duration_secs=self.duration_secs,
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "capture_hz": self.capture_hz,
-            "frames": [frame.to_dict() for frame in self.frames]
+            "frames": [frame.to_dict() for frame in self.frames],
         }
 
     @classmethod
@@ -109,7 +111,7 @@ class PlaybackSequence:
         return cls(
             name=data["name"],
             capture_hz=data["capture_hz"],
-            frames=[StageFrame.from_dict(f) for f in data.get("frames", [])]
+            frames=[StageFrame.from_dict(f) for f in data.get("frames", [])],
         )
 
     def to_cbor(self) -> bytes:
