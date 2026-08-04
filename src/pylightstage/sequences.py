@@ -3,7 +3,7 @@ from typing import Self, Tuple
 
 from .models import ColorMode, PolarizationMode
 from .models import FixtureIntensity, PlaybackSequence, StageFrame
-from .utils import to_16b
+from .utils import color_mode, to_16b, validate_index
 
 
 class SequenceBuilder:
@@ -44,15 +44,11 @@ class SequenceBuilder:
         self._current_rgb = [[(0, 0, 0) for _ in range(
             lights_per_arc)] for _ in range(num_arcs)]
 
-    def _validate_arc(self, arc: int) -> None:
-        if not 0 <= arc < self.num_arcs:
-            raise IndexError(
-                f"arc index {arc} is out of range for num_arcs {self.num_arcs}")
+    def _validate_arc(self, arc: int) -> int:
+        return validate_index("arc", arc, size=self.num_arcs)
 
-    def _validate_light(self, light: int) -> None:
-        if not 0 <= light < self.lights_per_arc:
-            raise IndexError(
-                f"light index {light} is out of range for lights_per_arc {self.lights_per_arc}")
+    def _validate_light(self, light: int) -> int:
+        return validate_index("light", light, size=self.lights_per_arc)
 
     def set_light(
         self,
@@ -62,8 +58,9 @@ class SequenceBuilder:
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
         """Set colour/intensity of a single fixture for current frame."""
-        self._validate_arc(arc)
-        self._validate_light(light)
+        arc = self._validate_arc(arc)
+        light = self._validate_light(light)
+        color = color_mode(color)
 
         val_16b = to_16b(intensity)
         if color in ('rgb', 'rgbw'):
