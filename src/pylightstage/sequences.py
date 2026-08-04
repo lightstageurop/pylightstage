@@ -3,7 +3,7 @@ from typing import Self, Tuple
 
 from .models import ColorMode, PolarizationMode
 from .models import FixtureIntensity, PlaybackSequence, StageFrame
-from .utils import color_mode, to_16b, validate_index
+from .utils import color_mode, to_16b, validate_index, validate_intensity
 
 
 class SequenceBuilder:
@@ -61,6 +61,7 @@ class SequenceBuilder:
         arc = self._validate_arc(arc)
         light = self._validate_light(light)
         color = color_mode(color)
+        intensity = validate_intensity
 
         val_16b = to_16b(intensity)
         if color in ('rgb', 'rgbw'):

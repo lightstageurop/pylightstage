@@ -3,8 +3,6 @@ from dataclasses import asdict, dataclass
 import functools
 import inspect
 import logging
-import math
-import operator
 import threading
 from typing import Any, Callable, Optional, Tuple, Union
 
@@ -515,7 +513,7 @@ class LightStageClient:
         color: ColorMode = 'rgb',
         scale: float = 1.0
     ):
-        """Show a 168x3 environment map, ordered by arc then light."""
+        """Show a (`num_arcs * lights_per_arc`)x3 environment map, ordered by arc then light."""
         color = color_mode(color)
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
             light = i % self.lights_per_arc
