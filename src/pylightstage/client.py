@@ -12,7 +12,7 @@ import cbor2
 import websockets
 
 from .models import CaptureConfig, FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
-from .utils import as_index, color_mode, polarization_mode, to_16b, unit_scale, validate_index
+from .utils import as_index, color_mode, polarization_mode, to_16b, unit_scale, validate_index, validate_intensity
 
 logger = logging.getLogger("LightStageClient")
 
@@ -208,26 +208,10 @@ class LightStageClient:
     def _validate_light(self, light: int) -> int:
         return validate_index("light", light, size=self.lights_per_arc)
 
-    @staticmethod
-    def _validate_intensity(intensity: Any) -> Tuple[float, float, float]:
-        try:
-            values = tuple(float(value) for value in intensity)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "intensity must contain three numeric values") from exc
-
-        if len(values) != 3:
-            raise ValueError("intensity must contain three numeric values")
-        if not all(math.isfinite(value) for value in values):
-            raise ValueError("intensity values must be finite")
-        if min(values) < 0.0 or max(values) > 255.0:
-            raise ValueError("intensity values are not between 0 and 255")
-        return values
-
     def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
         """Helper to build the UpdateColourRequest payload."""
         color = color_mode(color)
-        intensity = self._validate_intensity(intensity)
+        intensity = validate_intensity(intensity)
         value = to_16b(intensity)
         return {
             **({"rgb": value} if color in ('rgb', 'rgbw') else {}),
@@ -246,7 +230,7 @@ class LightStageClient:
 
         scale_value = unit_scale(scale)
         for value in env_map:
-            intensity = self._validate_intensity(value)
+            intensity = validate_intensity(value)
             yield tuple(channel * scale_value for channel in intensity)
 
     @classmethod
@@ -596,7 +580,7 @@ class LightStageClient:
         light: int,
         color: ColorMode = 'rgbw',
     ):
-        await self.turn_on_horizontal_arc(light, color=color, intensity=(0, 0, 0))
+        await self.turn_on_horizontal_arc(light, color, (0, 0, 0))
 
     turn_on_horizontal_arc = set_horizontal_arc
     turn_off_horizontal_arc = clear_horizontal_arc

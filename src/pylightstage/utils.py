@@ -1,6 +1,6 @@
 import math
 import operator
-from typing import Tuple
+from typing import Iterable, Tuple
 
 from .models import FixtureIntensity, FixtureValue
 
@@ -17,7 +17,7 @@ def as_index(name: str, value: int) -> int:
 def validate_index(name: str, value: int, *, size: int) -> int:
     idx = as_index(name, value)
     if not 0 <= idx < size:
-        raise ValueError(f"{name} must be between 0 and {size - 1}")
+        raise IndexError(f"{name} index must be between 0 and {size - 1}")
     return idx
 
 
@@ -39,6 +39,23 @@ def unit_scale(value: float) -> float:
     if not math.isfinite(value) or not 0.0 <= value <= 1.0:
         raise ValueError("scale value is not between 0.0 and 1.0")
     return value
+
+
+def validate_intensity(intensity: Iterable[float]) -> Tuple[float, float, float]:
+    try:
+        values = tuple(float(value) for value in intensity)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "intensity must contain three numeric values") from exc
+
+    if len(values) != 3:
+        raise ValueError("intensity must contain exactly three numeric values")
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError("intensity values must be finite")
+    if not all(0.0 <= v <= 255.0 for v in values):
+        raise ValueError("intensity values are not between 0 and 255")
+
+    return values  # type: ignore[return-value]
 
 
 def to_16b(
