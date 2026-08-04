@@ -167,7 +167,7 @@ async def test_show_pol_env_map_new_can_limit_to_rgb_or_white():
     client._send_and_recv = AsyncMock(return_value=None)
     env_map = EnvMap([[255, 255, 255] for _ in range(168)])
 
-    await client.show_pol_env_map_new(env_map, pol='pp', color='rgb')
+    await client.show_pol_env_map(env_map, pol='pp', color='rgb')
 
     fixtures = client._send_and_recv.call_args[0][0]["SetFixtures"]
     assert len(fixtures) == 84

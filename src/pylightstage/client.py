@@ -219,6 +219,7 @@ class LightStageClient:
         }
 
     def _queue_update(self, arc: int, light: int, colour_req: dict):
+        """Queue a colour request while allowing rgb and w requests to co-exist."""
         key = (arc, light)
         current = self._pending_updates.setdefault(key, {})
         current.update(colour_req)
@@ -526,28 +527,10 @@ class LightStageClient:
         self,
         env_map: Any,
         pol: PolarizationMode = 'up',
-        scale: float = 1.0
-    ):
-        """Show a 168x3 environment map through the polarization layout."""
-        pol = polarization_mode(pol)
-        if pol == 'up':
-            await self.show_env_map(env_map, 'rgbw', scale)
-            return
-
-        for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
-            light = i % self.lights_per_arc
-            arc = i // self.lights_per_arc
-            await self.turn_on_pol_light(light, arc, pol, value, go=False)
-        await self.go()
-
-    async def show_pol_env_map_new(
-        self,
-        env_map: Any,
-        pol: PolarizationMode = 'up',
         color: ColorMode = 'rgbw',
         scale: float = 1.0
     ):
-        """Show a polarized environment map, optionally limited to RGB or white fixtures."""
+        """Show a 168x3 polarized environment, optionally limited to RGB or white fixtures."""
         pol = polarization_mode(pol)
         color = color_mode(color)
         if pol == 'up':
