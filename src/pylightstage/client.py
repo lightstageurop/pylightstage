@@ -12,14 +12,12 @@ import cbor2
 import websockets
 
 from .models import CaptureConfig, FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
-from .utils import to_16b
+from .utils import as_index, color_mode, polarization_mode, to_16b, unit_scale, validate_index
 
 logger = logging.getLogger("LightStageClient")
 
 
 class LightStageClient:
-    NUM_ARCS = 12
-    LIGHTS_PER_ARC = 14
     _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
 
     def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
@@ -27,6 +25,9 @@ class LightStageClient:
         self._uri = uri
         self._websocket = None
         self._req_id = 0
+
+        self.num_arcs = 12
+        self.lights_per_arc = 14
 
         self._event_callbacks: list[Callable[[Any], Any]] = []
         self._pending_requests: dict[int, asyncio.Future] = {}
@@ -201,43 +202,11 @@ class LightStageClient:
                 ]
         return resp
 
-    @staticmethod
-    def _as_index(name: str, value: int) -> int:
-        if isinstance(value, bool):
-            raise ValueError(f"{name} must be an integer")
-        try:
-            return operator.index(value)
-        except TypeError as exc:
-            raise ValueError(f"{name} must be an integer") from exc
+    def _validate_arc(self, arc: int) -> int:
+        return validate_index("arc", arc, size=self.num_arcs)
 
-    @classmethod
-    def _validate_arc(cls, arc: int) -> int:
-        arc_idx = cls._as_index("arc", arc)
-        if not 0 <= arc_idx < cls.NUM_ARCS:
-            raise ValueError(
-                f"arc value is not between 0 and {cls.NUM_ARCS - 1}")
-        return arc_idx
-
-    @classmethod
-    def _validate_light(cls, light: int) -> int:
-        light_idx = cls._as_index("light", light)
-        if not 0 <= light_idx < cls.LIGHTS_PER_ARC:
-            raise ValueError(
-                f"light value is not between 0 and {cls.LIGHTS_PER_ARC - 1}")
-        return light_idx
-
-    @staticmethod
-    def _validate_color(color: str) -> ColorMode:
-        if color not in ('rgb', 'w', 'rgbw'):
-            raise ValueError("color value is not one of 'rgb', 'w', or 'rgbw'")
-        return color  # type: ignore[return-value]
-
-    @staticmethod
-    def _validate_pol(pol: str) -> PolarizationMode:
-        if pol not in ('up', 'cp', 'pp'):
-            raise ValueError(
-                "pol (polarization) value is not one of 'up', 'cp', 'pp'")
-        return pol  # type: ignore[return-value]
+    def _validate_light(self, light: int) -> int:
+        return validate_index("light", light, size=self.lights_per_arc)
 
     @staticmethod
     def _validate_intensity(intensity: Any) -> Tuple[float, float, float]:
@@ -255,16 +224,9 @@ class LightStageClient:
             raise ValueError("intensity values are not between 0 and 255")
         return values
 
-    @staticmethod
-    def _validate_scale(scale: float) -> float:
-        scale_value = float(scale)
-        if not math.isfinite(scale_value) or not 0.0 <= scale_value <= 1.0:
-            raise ValueError("scale value is not between 0.0 and 1.0")
-        return scale_value
-
     def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
         """Helper to build the UpdateColourRequest payload."""
-        color = self._validate_color(color)
+        color = color_mode(color)
         intensity = self._validate_intensity(intensity)
         value = to_16b(intensity)
         return {
@@ -278,18 +240,18 @@ class LightStageClient:
         current.update(colour_req)
 
     def _iter_env_map_values(self, env_map: Any, scale: float):
-        if getattr(env_map, "shape", None) != (self.NUM_ARCS * self.LIGHTS_PER_ARC, 3):
+        if getattr(env_map, "shape", None) != (self.num_arcs * self.lights_per_arc, 3):
             raise ValueError(
-                f"env_map shape is not ({self.NUM_ARCS * self.LIGHTS_PER_ARC}, 3)")
+                f"env_map shape is not ({self.num_arcs * self.lights_per_arc}, 3)")
 
-        scale_value = self._validate_scale(scale)
+        scale_value = unit_scale(scale)
         for value in env_map:
             intensity = self._validate_intensity(value)
             yield tuple(channel * scale_value for channel in intensity)
 
     @classmethod
     def _polarized_color(cls, light: int, arc: int, pol: PolarizationMode) -> ColorMode:
-        pol = cls._validate_pol(pol)
+        pol = polarization_mode(pol)
         if pol == 'up':
             return 'rgbw'
 
@@ -569,10 +531,10 @@ class LightStageClient:
         scale: float = 1.0
     ):
         """Show a 168x3 environment map, ordered by arc then light."""
-        color = self._validate_color(color)
+        color = color_mode(color)
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
-            light = i % self.LIGHTS_PER_ARC
-            arc = i // self.LIGHTS_PER_ARC
+            light = i % self.lights_per_arc
+            arc = i // self.lights_per_arc
             await self.turn_on_light(light, arc, color, value, go=False)
         await self.go()
 
@@ -583,14 +545,14 @@ class LightStageClient:
         scale: float = 1.0
     ):
         """Show a 168x3 environment map through the polarization layout."""
-        pol = self._validate_pol(pol)
+        pol = polarization_mode(pol)
         if pol == 'up':
             await self.show_env_map(env_map, 'rgbw', scale)
             return
 
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
-            light = i % self.LIGHTS_PER_ARC
-            arc = i // self.LIGHTS_PER_ARC
+            light = i % self.lights_per_arc
+            arc = i // self.lights_per_arc
             await self.turn_on_pol_light(light, arc, pol, value, go=False)
         await self.go()
 
@@ -602,15 +564,15 @@ class LightStageClient:
         scale: float = 1.0
     ):
         """Show a polarized environment map, optionally limited to RGB or white fixtures."""
-        pol = self._validate_pol(pol)
-        color = self._validate_color(color)
+        pol = polarization_mode(pol)
+        color = color_mode(color)
         if pol == 'up':
             await self.show_env_map(env_map, color, scale)
             return
 
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
-            light = i % self.LIGHTS_PER_ARC
-            arc = i // self.LIGHTS_PER_ARC
+            light = i % self.lights_per_arc
+            arc = i // self.lights_per_arc
             polarized_color = self._polarized_color(light, arc, pol)
             if color == 'rgbw' or color == polarized_color:
                 await self.turn_on_light(light, arc, polarized_color, value, go=False)
@@ -624,8 +586,8 @@ class LightStageClient:
     ):
         """Set the same light index across all arcs."""
         light = self._validate_light(light)
-        color = self._validate_color(color)
-        for arc in range(self.NUM_ARCS):
+        color = color_mode(color)
+        for arc in range(self.num_arcs):
             await self.turn_on_light(light, arc, color, intensity, go=False)
         await self.go()
 

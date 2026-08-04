@@ -1,6 +1,44 @@
+import math
+import operator
 from typing import Tuple
 
 from .models import FixtureIntensity, FixtureValue
+
+
+def as_index(name: str, value: int) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer")
+    try:
+        return operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
+
+def validate_index(name: str, value: int, *, size: int) -> int:
+    idx = as_index(name, value)
+    if not 0 <= idx < size:
+        raise ValueError(f"{name} must be between 0 and {size - 1}")
+    return idx
+
+
+def color_mode(color: str) -> ColorMode:
+    if color not in ('rgb', 'w', 'rgbw'):
+        raise ValueError("color value is not one of 'rgb', 'w', or 'rgbw'")
+    return color  # type: ignore[return-value]
+
+
+def polarization_mode(pol: str) -> PolarizationMode:
+    if pol not in ('up', 'cp', 'pp'):
+        raise ValueError(
+            "pol (polarization) value is not one of 'up', 'cp', 'pp'")
+    return pol  # type: ignore[return-value]
+
+
+def unit_scale(value: float) -> float:
+    value = float(value)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("scale value is not between 0.0 and 1.0")
+    return value
 
 
 def to_16b(
