@@ -2,7 +2,12 @@ import math
 import operator
 from typing import Iterable, Tuple
 
-from .models import FixtureIntensity, FixtureValue
+from .models import (
+    ColorMode,
+    FixtureIntensity,
+    FixtureValue,
+    PolarizationMode
+)
 
 
 def as_index(name: str, value: int) -> int:
