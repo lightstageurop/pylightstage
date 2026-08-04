@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import functools
 import inspect
 import logging
@@ -9,8 +9,8 @@ from typing import Any, Callable, Optional, Tuple, Union
 import cbor2
 import websockets
 
-from .models import CaptureConfig, FixtureIntensity, PlaybackSequence, SequenceSummary, StageMode
-from .utils import as_index, color_mode, polarization_mode, to_16b, unit_scale, validate_index, validate_intensity
+from .models import CaptureConfig, ColorMode, FixtureIntensity, PlaybackSequence, PolarizationMode, SequenceSummary, StageMode
+from .utils import color_mode, polarization_mode, to_16b, unit_scale, validate_index, validate_intensity
 
 logger = logging.getLogger("LightStageClient")
 
@@ -262,7 +262,7 @@ class LightStageClient:
 
     # Playback API
 
-    async def list_sequences(self) -> List[SequenceSummary]:
+    async def list_sequences(self) -> list[SequenceSummary]:
         """Fetch a list of all sequence summaries from the server."""
         return await self._send_and_recv("ListSequences")
 
