@@ -5,10 +5,16 @@
 [project]
   authors = [{ name = "Thomas Aldrian", email = "thomas.aldrian24@imperial.ac.uk" }]
   dependencies = ["cbor2", "websockets", "zstandard"]
+  description = "Python client for ICL RGI group's Lightstage"
   license = { text = "MIT" }
   name = "pylightstage"
+  readme = "README.md"
   requires-python = ">=3.11"
   version = "0.1.0"
+
+  [project.urls]
+    Homepage = "https://github.com/lightstageurop/pylightstage"
+    Repository = "https://github.com/lightstageurop/pylightstage"
 
   [project.optional-dependencies]
     dev = ["pytest", "pytest-asyncio", "pytest-cov"]
