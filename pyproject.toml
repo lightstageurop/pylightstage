@@ -15,6 +15,9 @@
   [project.urls]
     Homepage = "https://github.com/lightstageurop/pylightstage"
     Repository = "https://github.com/lightstageurop/pylightstage"
+  [project.scripts]
+    lscli = "pylightstage.lsCLI:main"
+    lsCLI = "pylightstage.lsCLI:main"
 
   [project.optional-dependencies]
     dev = ["pytest", "pytest-asyncio", "pytest-cov"]
