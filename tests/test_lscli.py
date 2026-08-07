@@ -1,10 +1,13 @@
 """Unit tests for the atomic pylightstage command-line interface."""
 
+import asyncio
 from dataclasses import dataclass
 from io import StringIO
 import json
 
+import cbor2
 import pytest
+import websockets
 
 from pylightstage import StageMode
 from pylightstage.lsCLI import DEFAULT_URI, run
@@ -22,8 +25,9 @@ class Summary:
 class FakeClient:
     instances = []
 
-    def __init__(self, *, uri):
+    def __init__(self, *, uri, connect_timeout=5.0):
         self.uri = uri
+        self.connect_timeout = connect_timeout
         self.calls = []
         self.closed = False
         self.instances.append(self)
@@ -46,6 +50,10 @@ class FakeClient:
     def list_sequences(self):
         self.calls.append(("list_sequences", {}))
         return [Summary(id="01TEST", name="demo")]
+
+    def get_config(self):
+        self.calls.append(("get_config", {}))
+        return {"arcs": 12}
 
 
 @pytest.fixture(autouse=True)
@@ -102,3 +110,96 @@ def test_query_results_are_json_encoded():
     run(["list-sequences"], client_factory=FakeClient, stdout=output)
 
     assert json.loads(output.getvalue()) == [{"id": "01TEST", "name": "demo"}]
+
+
+def test_interactive_mode_guides_a_fixture_update_and_closes_cleanly():
+    responses = iter([
+        "1",  # main: fixtures
+        "1",  # fixtures: set one fixture
+        "0", "1", "rgb", "255 0 0",  # fixture form
+        "",  # continue after successful action
+        "b",  # fixture menu: back
+        "q",  # main menu: quit
+    ])
+    output = StringIO()
+
+    status = run(
+        ["--uri", "ws://interactive-test/ws", "interactive", "--no-color"],
+        client_factory=FakeClient,
+        stdout=output,
+        stderr=StringIO(),
+        input_func=lambda _prompt: next(responses),
+    )
+
+    assert status == 0
+    client = FakeClient.instances[0]
+    assert client.closed
+    assert client.uri == "ws://interactive-test/ws"
+    assert client.calls == [("set_light", {
+        "arc": 0, "light": 1, "color": "rgb", "intensity": (255.0, 0.0, 0.0),
+    })]
+    assert "LightStage Interactive Console" in output.getvalue()
+    assert "\033[" not in output.getvalue()
+
+
+def test_interactive_mode_reconnects_when_the_endpoint_changes():
+    responses = iter(["5", "ws://replacement/ws", "q"])
+
+    status = run(
+        ["interactive", "--no-color"],
+        client_factory=FakeClient,
+        stdout=StringIO(),
+        stderr=StringIO(),
+        input_func=lambda _prompt: next(responses),
+    )
+
+    assert status == 0
+    assert [client.uri for client in FakeClient.instances] == [
+        DEFAULT_URI, "ws://replacement/ws",
+    ]
+    assert all(client.closed for client in FakeClient.instances)
+
+
+async def test_interactive_mode_works_against_a_local_simulated_server():
+    received_commands = []
+
+    async def simulated_lsserver(websocket):
+        async for payload in websocket:
+            request = cbor2.loads(payload)
+            received_commands.append(request["command"])
+            await websocket.send(cbor2.dumps({
+                "Response": {"id": request["id"], "response": "Ok"},
+            }))
+
+    try:
+        server = await websockets.serve(simulated_lsserver, "127.0.0.1", 0)
+    except OSError as exc:
+        pytest.skip(f"Local sockets are unavailable in this environment: {exc}")
+
+    try:
+        port = server.sockets[0].getsockname()[1]
+        responses = iter([
+            "1", "1", "0", "1", "rgb", "255 0 0", "", "b", "q",
+        ])
+        status = await asyncio.to_thread(
+            run,
+            [
+                "--uri", f"ws://127.0.0.1:{port}",
+                "--connect-timeout", "1", "interactive", "--no-color",
+            ],
+            stdout=StringIO(),
+            stderr=StringIO(),
+            input_func=lambda _prompt: next(responses),
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert status == 0
+    assert received_commands == [{
+        "SetFixture": {
+            "arc_idx": 0,
+            "light_idx": 1,
+            "colour": {"rgb": (65535, 0, 0)},
+        },
+    }]

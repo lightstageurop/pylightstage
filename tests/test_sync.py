@@ -59,3 +59,17 @@ def test_sync_client_lifecycle_and_methods(mock_connect):
     # Exiting the 'with' block should shut down the thread cleanly
     assert not sync_client._thread.is_alive()
     assert not sync_client.is_connected
+
+
+def test_sync_client_stops_its_background_thread_when_connection_fails():
+    async def never_connect(_uri):
+        await asyncio.sleep(60)
+
+    with patch("pylightstage.client.websockets.connect", new=never_connect):
+        sync_client = LightStageSyncClient(
+            "ws://unreachable", connect_timeout=0.01
+        )
+        with pytest.raises(TimeoutError):
+            sync_client.__enter__()
+
+    assert not sync_client._thread.is_alive()

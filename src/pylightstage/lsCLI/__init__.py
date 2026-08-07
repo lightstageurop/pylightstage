@@ -11,6 +11,7 @@ import argparse
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 import json
+import math
 from pathlib import Path
 import sys
 from typing import Any, Callable, Sequence, TextIO
@@ -94,11 +95,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--uri", default=DEFAULT_URI,
         help=f"LightStage WebSocket endpoint (default: {DEFAULT_URI})",
     )
+    parser.add_argument(
+        "--connect-timeout", type=float, default=5.0, metavar="SECONDS",
+        help="maximum time to wait for the WebSocket connection (default: 5)",
+    )
     commands = parser.add_subparsers(dest="action", required=True, title="commands")
 
     commands.add_parser("get-config", help="print the server configuration")
     commands.add_parser("get-mode", help="print the current stage mode")
     commands.add_parser("trigger", help="trigger a capture in manual mode")
+    interactive = commands.add_parser(
+        "interactive", aliases=["i"],
+        help="open a guided interactive terminal interface",
+    )
+    interactive.add_argument(
+        "--no-color", action="store_true",
+        help="disable terminal colours and styling",
+    )
 
     mode = commands.add_parser("set-mode", help="set the stage operation mode")
     mode.add_argument("mode", choices=("demo", "manual", "olat", "playback"))
@@ -203,6 +216,8 @@ def _json_default(value: Any) -> Any:
 
 def _validate_args(args: argparse.Namespace) -> None:
     """Validate command combinations before opening a network connection."""
+    if not math.isfinite(args.connect_timeout) or args.connect_timeout <= 0.0:
+        raise ValueError("--connect-timeout must be a positive finite number")
     if args.action != "set-mode":
         return
     needs_capture_hz = args.mode in ("olat", "playback")
@@ -217,6 +232,8 @@ def run(
     *,
     client_factory: Callable[..., Any] = LightStageSyncClient,
     stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+    input_func: Callable[[str], str] = input,
 ) -> int:
     """Run one CLI command and return a shell-style exit status.
 
@@ -226,7 +243,21 @@ def run(
     args = build_parser().parse_args(argv)
     _validate_args(args)
     output = stdout if stdout is not None else sys.stdout
-    with client_factory(uri=args.uri) as client:
+    if args.action in ("interactive", "i"):
+        from .interactive import run_interactive
+
+        return run_interactive(
+            args.uri,
+            client_factory=client_factory,
+            connect_timeout=args.connect_timeout,
+            dispatch=_dispatch,
+            json_default=_json_default,
+            stdout=output,
+            stderr=stderr,
+            input_func=input_func,
+            color=False if args.no_color else None,
+        )
+    with client_factory(uri=args.uri, connect_timeout=args.connect_timeout) as client:
         result = _dispatch(client, args)
     if result is not None:
         print(json.dumps(result, default=_json_default, indent=2, sort_keys=True), file=output)

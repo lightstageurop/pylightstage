@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import logging
+import math
 import threading
 from dataclasses import asdict
 from typing import Any, Callable, Optional, Tuple, Union
@@ -33,9 +34,16 @@ logger = logging.getLogger("LightStageClient")
 class LightStageClient:
     _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
 
-    def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
+    def __init__(
+        self,
+        uri: str = "ws://10.37.211.100:8080/ws",
+        connect_timeout: float = 5.0,
+    ):
         """Initialise the Light Stage Client."""
+        if not math.isfinite(connect_timeout) or connect_timeout <= 0.0:
+            raise ValueError("connect_timeout must be a positive finite number")
         self._uri = uri
+        self._connect_timeout = connect_timeout
         self._websocket = None
         self._req_id = 0
 
@@ -58,7 +66,9 @@ class LightStageClient:
         if self._websocket is not None:
             return  # already connected
 
-        self._websocket = await websockets.connect(self._uri)
+        self._websocket = await asyncio.wait_for(
+            websockets.connect(self._uri), timeout=self._connect_timeout
+        )
         self._disconnected_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver())
 
@@ -645,7 +655,13 @@ class LightStageSyncClient:
     # with LightStageSyncClient() as client:
     #     client.turn_on_light(...)
     def __enter__(self):
-        self._run(self._client.connect())
+        try:
+            self._run(self._client.connect())
+        except BaseException:
+            # If connecting fails, `with` never calls __exit__.  Stop the
+            # background event-loop thread here so failed CLI attempts exit.
+            self.close()
+            raise
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

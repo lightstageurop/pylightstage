@@ -147,14 +147,26 @@ See [`examples/`](examples/) for async, sync, event, and sequence workflows.
 
 ## Command-line interface (`lsCLI`)
 
-`lsCLI` is for atomic actions: each invocation connects, performs one operation, then closes. Use `lscli` (recommended), `lsCLI`, or the module entry point:
+The normal `lsCLI` commands are atomic: each invocation connects, performs one operation, then closes. For guided use at a terminal, launch the visual interactive console; it keeps one connection open until you quit or choose a new endpoint. Use `lscli` (recommended), `lsCLI`, or the module entry point:
 
 ```bash
 lscli --help
 python -m pylightstage.lsCLI --help
+
+# Guided menus for fixtures, modes, sequences, and server inspection.
+lscli --uri ws://lightstage.example:8080/ws interactive
+# Use plain text when recording output or using an unsupported terminal.
+lscli --uri ws://lightstage.example:8080/ws interactive --no-color
 ```
 
-Place global `--uri` before the command. It defaults to `ws://10.37.211.100:8080/ws`.
+Place global `--uri` before the command. It defaults to `ws://10.37.211.100:8080/ws`. Connection attempts time out after five seconds by default; use `--connect-timeout SECONDS` to choose another positive timeout:
+
+```bash
+lscli --uri ws://127.0.0.1:8080/ws --connect-timeout 2 interactive
+```
+The interactive console uses colour when standard output is a terminal. Enter
+`b` at a prompt to cancel or return to the preceding menu, and `q` from the
+main menu to close the connection and exit.
 
 ```bash
 # Inspect state. Returned data is JSON on standard output.
@@ -190,6 +202,7 @@ lscli --uri ws://lightstage.example:8080/ws delete-sequence <sequence-id>
 | Command | Purpose |
 | --- | --- |
 | `get-config`, `get-mode` | Print server data as JSON. |
+| `interactive` (`i`) | Open a guided, reconnectable terminal console. |
 | `set-mode demo\|manual\|olat\|playback` | Change mode. OLAT and Playback require `--capture-hz`. |
 | `trigger` | Trigger a camera capture in manual mode. |
 | `set-light` / `clear-light` | Set or clear one `--arc` / `--light` target. |
@@ -246,6 +259,44 @@ pytest -m integration
 
 Integration tests can alter fixture state and server mode; run them only on a safe test installation. They attempt to restore the original mode where applicable.
 
+### Simulate a server locally
+
+For CLI development, run a minimal local WebSocket server in one terminal and connect the CLI from another. This simulator records the CBOR request envelope and responds `Ok` to every command; it does not control hardware.
+
+```bash
+python - <<'PY'
+import asyncio
+import cbor2
+import websockets
+
+
+async def simulated_lsserver(websocket):
+    async for payload in websocket:
+        request = cbor2.loads(payload)
+        print("received:", request["command"])
+        await websocket.send(cbor2.dumps({
+            "Response": {"id": request["id"], "response": "Ok"},
+        }))
+
+
+async def main():
+    async with websockets.serve(simulated_lsserver, "127.0.0.1", 8765):
+        print("simulated lsserver listening at ws://127.0.0.1:8765/ws")
+        await asyncio.Future()  # run until Ctrl-C
+
+
+asyncio.run(main())
+PY
+```
+
+Then, in a second terminal, run:
+
+```bash
+lscli --uri ws://127.0.0.1:8765/ws --connect-timeout 2 interactive
+```
+
+The local integration-style test in `tests/test_lscli.py` uses this same protocol. It skips only when an environment blocks local socket binding.
+
 Before releasing, build and smoke-test the distribution in a clean environment:
 
 ```bash
@@ -260,11 +311,11 @@ Update the version and console-script declarations in `pyproject.toml` as part o
 
 ### Maintaining `lsCLI`
 
-The CLI deliberately maps one invocation to one `LightStageSyncClient` operation. When adding a command:
+Non-interactive CLI commands deliberately map one invocation to one `LightStageSyncClient` operation. `interactive` is the exception: it holds a client for the lifetime of the menu session and reconnects only when the user changes endpoint. When adding a command:
 
 1. Define parser arguments and help text in `build_parser()` in `src/pylightstage/lsCLI/__init__.py`.
 2. Validate command-specific argument combinations in `_validate_args()` before opening a connection.
-3. Map the command to one client call in `_dispatch()`; do not add a stateful multi-step workflow.
+3. Map non-interactive commands to one client call in `_dispatch()`; do not add a stateful multi-step workflow. Add guided menu flows to `lsCLI/interactive.py` and keep them usable without optional dependencies.
 4. Make returned values JSON-serializable through `_json_default()`, with data on standard output and diagnostics on standard error.
 5. Add hardware-free tests in `tests/test_lscli.py` using a fake client.
 6. Update this command reference and run `pytest`.
