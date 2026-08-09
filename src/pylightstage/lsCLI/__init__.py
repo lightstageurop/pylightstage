@@ -59,7 +59,9 @@ def _add_set_command(
         parser.add_argument("--light", required=True, type=int)
     if polarized:
         parser.add_argument("--polarization", choices=_POLARIZATIONS, default="up")
-    _add_colour_options(parser)
+        parser.add_argument("--color", choices=_COLOURS, help=argparse.SUPPRESS)
+    else:
+        _add_colour_options(parser)
     _add_intensity_option(parser)
 
 
@@ -82,7 +84,9 @@ def _add_clear_command(
         parser.add_argument("--light", required=True, type=int)
     if polarized:
         parser.add_argument("--polarization", choices=_POLARIZATIONS, default="up")
-    _add_colour_options(parser)
+        parser.add_argument("--color", choices=_COLOURS, help=argparse.SUPPRESS)
+    else:
+        _add_colour_options(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,12 +197,15 @@ def _dispatch(client: Any, args: argparse.Namespace) -> Any:
     if method_name is None:  # defensive: parser controls all command values
         raise ValueError(f"Unsupported command: {action}")
 
-    kwargs: dict[str, Any] = {"color": args.color}
+    polarized = "polarized" in action
+    kwargs: dict[str, Any] = {}
+    if not polarized:
+        kwargs["color"] = args.color
     if args.target in ("light", "arc"):
         kwargs["arc"] = args.arc
     if args.target in ("light", "horizontal_arc"):
         kwargs["light"] = args.light
-    if "polarized" in action:
+    if polarized:
         kwargs["pol"] = args.polarization
     if action.startswith("set-"):
         kwargs["intensity"] = tuple(args.intensity)

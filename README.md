@@ -186,7 +186,7 @@ lscli --uri ws://lightstage.example:8080/ws set-lightstage \
   --color rgbw --intensity 32 32 32
 lscli --uri ws://lightstage.example:8080/ws set-horizontal-arc --light 3
 lscli --uri ws://lightstage.example:8080/ws set-polarized-light \
-  --arc 1 --light 3 --polarization cp --color rgb --intensity 255 255 255
+  --arc 1 --light 3 --polarization cp --intensity 255 255 255
 
 # Modes and manual capture.
 lscli --uri ws://lightstage.example:8080/ws set-mode manual
@@ -214,7 +214,7 @@ lscli --uri ws://lightstage.example:8080/ws delete-sequence <sequence-id>
 | `list-sequences`, `get-sequence`, `delete-sequence` | List, inspect, or delete server sequences. |
 | `upload-sequence PATH` | Load and upload a `.cbor` or `.cbor.zst` file. |
 
-Set commands default to `--color rgbw --intensity 255 255 255`; clear commands default to `--color rgbw`. Polarized commands accept `--polarization up`, `cp`, or `pp`. Use `lscli <command> --help` for exact command options.
+Set commands default to `--color rgbw --intensity 255 255 255`; clear commands default to `--color rgbw`. Polarized commands accept `--polarization up`, `cp`, or `pp`, and select the appropriate RGB or white channel automatically. Use `lscli <command> --help` for exact command options.
 
 The CLI writes errors to standard error and exits non-zero for invalid arguments, unreadable sequence files, connection failures, or server errors. Commands with no returned data are silent on success.
 

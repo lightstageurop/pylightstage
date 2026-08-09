@@ -173,15 +173,18 @@ class InteractiveSession:
             if light is None:
                 return None
             values["light"] = light
-        colour = self._choice("Colour [rgb/w/rgbw]", {"rgb", "w", "rgbw"}, default="rgbw")
-        if colour is None:
-            return None
-        values["color"] = colour
         if polarized:
             pol = self._choice("Polarization [up/cp/pp]", {"up", "cp", "pp"}, default="up")
             if pol is None:
                 return None
             values["polarization"] = pol
+        else:
+            colour = self._choice(
+                "Colour [rgb/w/rgbw]", {"rgb", "w", "rgbw"}, default="rgbw"
+            )
+            if colour is None:
+                return None
+            values["color"] = colour
         if action.startswith("set-"):
             intensity = self._intensity()
             if intensity is None:

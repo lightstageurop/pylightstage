@@ -41,8 +41,15 @@ class FakeClient:
     def set_light(self, **kwargs):
         self.calls.append(("set_light", kwargs))
 
-    def clear_pol_light(self, **kwargs):
-        self.calls.append(("clear_pol_light", kwargs))
+    def set_pol_light(self, *, arc, light, pol, intensity):
+        self.calls.append(("set_pol_light", {
+            "arc": arc, "light": light, "pol": pol, "intensity": intensity,
+        }))
+
+    def clear_pol_light(self, *, arc, light, pol):
+        self.calls.append(("clear_pol_light", {
+            "arc": arc, "light": light, "pol": pol,
+        }))
 
     def set_mode(self, *args):
         self.calls.append(("set_mode", args))
@@ -91,7 +98,19 @@ def test_clear_polarized_light_uses_polarization_argument():
 
     assert FakeClient.instances[0].uri == DEFAULT_URI
     assert FakeClient.instances[0].calls == [("clear_pol_light", {
-        "arc": 1, "light": 3, "color": "w", "pol": "cp",
+        "arc": 1, "light": 3, "pol": "cp",
+    })]
+
+
+def test_set_polarized_light_omits_color_selected_by_client():
+    run(
+        ["set-polarized-light", "--arc", "2", "--light", "4",
+         "--polarization", "pp", "--intensity", "10", "20", "30"],
+        client_factory=FakeClient,
+    )
+
+    assert FakeClient.instances[0].calls == [("set_pol_light", {
+        "arc": 2, "light": 4, "pol": "pp", "intensity": (10.0, 20.0, 30.0),
     })]
 
 
