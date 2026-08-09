@@ -56,6 +56,11 @@ class FakeClient:
         return {"arcs": 12}
 
 
+class TtyStringIO(StringIO):
+    def isatty(self):
+        return True
+
+
 @pytest.fixture(autouse=True)
 def reset_clients():
     FakeClient.instances.clear()
@@ -110,6 +115,37 @@ def test_query_results_are_json_encoded():
     run(["list-sequences"], client_factory=FakeClient, stdout=output)
 
     assert json.loads(output.getvalue()) == [{"id": "01TEST", "name": "demo"}]
+
+
+def test_no_action_opens_interactive_mode():
+    status = run(
+        [],
+        client_factory=FakeClient,
+        stdout=StringIO(),
+        stderr=StringIO(),
+        input_func=lambda _prompt: "q",
+    )
+
+    assert status == 0
+    assert len(FakeClient.instances) == 1
+    assert FakeClient.instances[0].closed
+
+
+def test_interactive_pages_clear_the_terminal_before_rendering():
+    responses = iter(["1", "b", "q"])
+    output = TtyStringIO()
+
+    run(
+        [],
+        client_factory=FakeClient,
+        stdout=output,
+        stderr=StringIO(),
+        input_func=lambda _prompt: next(responses),
+    )
+
+    rendered = output.getvalue()
+    assert rendered.count("\033[2J\033[H") == 3
+    assert rendered.count("LightStage Interactive Console") == 3
 
 
 def test_interactive_mode_guides_a_fixture_update_and_closes_cleanly():

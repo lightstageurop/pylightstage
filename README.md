@@ -147,13 +147,14 @@ See [`examples/`](examples/) for async, sync, event, and sequence workflows.
 
 ## Command-line interface (`lsCLI`)
 
-The normal `lsCLI` commands are atomic: each invocation connects, performs one operation, then closes. For guided use at a terminal, launch the visual interactive console; it keeps one connection open until you quit or choose a new endpoint. Use `lscli` (recommended), `lsCLI`, or the module entry point:
+The normal `lsCLI` commands are atomic: each invocation connects, performs one operation, then closes. With no action, `lscli` launches the visual interactive console; it keeps one connection open until you quit or choose a new endpoint. Use `lscli` (recommended), `lsCLI`, or the module entry point:
 
 ```bash
 lscli --help
 python -m pylightstage.lsCLI --help
 
 # Guided menus for fixtures, modes, sequences, and server inspection.
+lscli
 lscli --uri ws://lightstage.example:8080/ws interactive
 # Use plain text when recording output or using an unsupported terminal.
 lscli --uri ws://lightstage.example:8080/ws interactive --no-color
@@ -164,9 +165,9 @@ Place global `--uri` before the command. It defaults to `ws://10.37.211.100:8080
 ```bash
 lscli --uri ws://127.0.0.1:8080/ws --connect-timeout 2 interactive
 ```
-The interactive console uses colour when standard output is a terminal. Enter
-`b` at a prompt to cancel or return to the preceding menu, and `q` from the
-main menu to close the connection and exit.
+The interactive console uses colour and clears the previous page when standard
+output is a terminal. Enter `b` at a prompt to cancel or return to the preceding
+menu, and `q` from the main menu to close the connection and exit.
 
 ```bash
 # Inspect state. Returned data is JSON on standard output.

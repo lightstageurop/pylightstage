@@ -1,8 +1,8 @@
-"""Command-line interface for single LightStage operations.
+"""Command-line interface for LightStage operations.
 
 The public :func:`run` function is also useful when embedding the CLI in another
-Python program.  Each call creates a client, performs one action, and closes
-the connection before returning.
+Python program.  With no action, it starts the interactive console; explicit
+actions create a client, perform one operation, and close the connection.
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the parser used by the installed command and ``python -m`` entry point."""
     parser = argparse.ArgumentParser(
         prog="lscli",
-        description="Perform one atomic action using the pylightstage interface.",
+        description="Control a LightStage interactively or perform one atomic action.",
     )
     parser.add_argument(
         "--uri", default=DEFAULT_URI,
@@ -99,7 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--connect-timeout", type=float, default=5.0, metavar="SECONDS",
         help="maximum time to wait for the WebSocket connection (default: 5)",
     )
-    commands = parser.add_subparsers(dest="action", required=True, title="commands")
+    parser.set_defaults(no_color=False)
+    commands = parser.add_subparsers(dest="action", title="commands")
 
     commands.add_parser("get-config", help="print the server configuration")
     commands.add_parser("get-mode", help="print the current stage mode")
@@ -241,6 +242,8 @@ def run(
     how to present them.  :func:`main` provides the user-facing error handling.
     """
     args = build_parser().parse_args(argv)
+    if args.action is None:
+        args.action = "interactive"
     _validate_args(args)
     output = stdout if stdout is not None else sys.stdout
     if args.action in ("interactive", "i"):

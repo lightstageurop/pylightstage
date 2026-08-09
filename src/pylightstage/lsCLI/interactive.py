@@ -38,6 +38,12 @@ class Terminal:
     def write(self, text: str = "") -> None:
         print(text, file=self.output)
 
+    def clear(self) -> None:
+        """Clear an interactive terminal without polluting redirected output."""
+        if getattr(self.output, "isatty", lambda: False)():
+            self.output.write("\033[2J\033[H")
+            self.output.flush()
+
     def panel(self, title: str, lines: list[str]) -> None:
         width = min(88, max(54, len(title) + 8, *(len(line) + 4 for line in lines)))
         heading = self._style(f" {title} ", self._BOLD + self._CYAN)
@@ -83,13 +89,18 @@ class InteractiveSession:
         self.terminal = terminal
         self.input = input_func
 
-    def run(self) -> str | None:
-        """Run the menu and return a replacement URI when reconnecting."""
+    def _begin_page(self, *details: str) -> None:
+        """Clear the terminal and redraw the persistent console header."""
+        self.terminal.clear()
         self.terminal.panel(
             "LightStage Interactive Console",
-            [f"Endpoint: {self.uri}", "Status: connected", "Choose an action below; q exits safely."],
+            [f"Endpoint: {self.uri}", "Status: connected", *details],
         )
+
+    def run(self) -> str | None:
+        """Run the menu and return a replacement URI when reconnecting."""
         while True:
+            self._begin_page("Choose an action below; q exits safely.")
             self.terminal.menu("Main menu", [
                 ("1", "Fixtures and stage"),
                 ("2", "Modes and camera capture"),
@@ -130,6 +141,7 @@ class InteractiveSession:
             "10": ("clear-polarized-light", "light", True),
         }
         while True:
+            self._begin_page()
             self.terminal.menu("Fixtures and stage", [
                 ("1", "Set one fixture"), ("2", "Clear one fixture"),
                 ("3", "Set an arc"), ("4", "Clear an arc"),
@@ -187,6 +199,7 @@ class InteractiveSession:
             "6": ("trigger", None),
         }
         while True:
+            self._begin_page()
             self.terminal.menu("Modes and camera capture", [
                 ("1", "Show current mode"), ("2", "Set Demo mode"),
                 ("3", "Set Manual mode"), ("4", "Set OLAT mode"),
@@ -211,6 +224,7 @@ class InteractiveSession:
 
     def _sequences(self) -> None:
         while True:
+            self._begin_page()
             self.terminal.menu("Playback sequences", [
                 ("1", "List sequences"), ("2", "Show sequence metadata"),
                 ("3", "Upload a local .cbor or .cbor.zst file"),
@@ -238,9 +252,11 @@ class InteractiveSession:
                     self._execute(argparse.Namespace(action="delete-sequence", sequence_id=sequence_id))
                 else:
                     self.terminal.warning("Delete cancelled.")
+                    self._pause()
 
     def _inspect(self) -> None:
         while True:
+            self._begin_page()
             self.terminal.menu("Inspect server", [
                 ("1", "Show configuration"), ("2", "Show current mode"),
                 ("3", "List sequences"), ("b", "Back"),
@@ -255,8 +271,10 @@ class InteractiveSession:
         try:
             result = self.dispatch(self.client, args)
         except Exception as exc:
+            self._begin_page()
             self.terminal.failure(str(exc))
         else:
+            self._begin_page()
             self.terminal.success("Action completed.")
             if result is not None:
                 self.terminal.write(json.dumps(result, default=self.json_default, indent=2, sort_keys=True))
@@ -369,6 +387,11 @@ def run_interactive(
                     terminal=terminal, input_func=input_func,
                 ).run()
         except Exception as exc:
+            terminal.clear()
+            terminal.panel(
+                "LightStage Interactive Console",
+                [f"Endpoint: {current_uri}", "Status: connection failed"],
+            )
             terminal.failure(f"Could not connect to {current_uri}: {exc}")
             return 1
         if replacement is None:
