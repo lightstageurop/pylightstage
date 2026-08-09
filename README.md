@@ -114,15 +114,21 @@ async with LightStageClient(URI) as client:
 `get_config()` returns the server configuration dictionary and `get_mode()` returns a `StageMode` (or `None`). Use `set_mode()` or convenience methods to change mode:
 
 ```python
-from pylightstage import CaptureConfig, StageMode
+from pylightstage import StageMode
 
 await client.set_mode(StageMode.DEMO)
 await client.set_mode_manual()
 await client.set_mode_olat(capture_hz=30.0)
-await client.set_mode(StageMode.PLAYBACK, CaptureConfig(capture_hz=30.0))
+await client.set_mode_playback(sequence_id="01H...")
 ```
 
-OLAT and Playback require `CaptureConfig`; Demo and Manual do not. Register an event callback with `client.on_event(callback)`, or await one event with `await client.wait_for_event("EventName", timeout=30)`.
+OLAT requires a capture rate. Playback requires the ID of a sequence already
+uploaded to the server and uses that sequence's capture rate. Demo and Manual
+require neither. Register an event callback with `client.on_event(callback)`,
+or await one event with `await client.wait_for_event("CaptureFinished", timeout=30)`.
+`trigger()` queues one camera capture and is accepted only while the server is
+in Manual mode. Physical shutter signalling is performed by the Rust server;
+Python surfaces any rejection returned by that server.
 
 ### Playback sequences
 
@@ -196,15 +202,16 @@ lscli --uri ws://lightstage.example:8080/ws trigger
 # Server-side sequence management.
 lscli --uri ws://lightstage.example:8080/ws upload-sequence red-frame.cbor.zst
 lscli --uri ws://lightstage.example:8080/ws list-sequences
-lscli --uri ws://lightstage.example:8080/ws get-sequence <sequence-id>
-lscli --uri ws://lightstage.example:8080/ws delete-sequence <sequence-id>
+lscli --uri ws://lightstage.example:8080/ws get-sequence SEQUENCE_ID
+lscli --uri ws://lightstage.example:8080/ws set-mode playback --sequence-id SEQUENCE_ID
+lscli --uri ws://lightstage.example:8080/ws delete-sequence SEQUENCE_ID
 ```
 
 | Command | Purpose |
 | --- | --- |
 | `get-config`, `get-mode` | Print server data as JSON. |
 | `interactive` (`i`) | Open a guided, reconnectable terminal console. |
-| `set-mode demo\|manual\|olat\|playback` | Change mode. OLAT and Playback require `--capture-hz`. |
+| `set-mode demo\|manual\|olat\|playback` | Change mode. OLAT requires `--capture-hz`; Playback requires `--sequence-id`. |
 | `trigger` | Trigger a camera capture in manual mode. |
 | `set-light` / `clear-light` | Set or clear one `--arc` / `--light` target. |
 | `set-arc` / `clear-arc` | Set or clear all fixtures in `--arc`. |
@@ -226,7 +233,8 @@ The CLI writes errors to standard error and exits non-zero for invalid arguments
 | `Not connected to WebSocket server` | Enter the client context before calling a method; do not reuse it after the context exits. |
 | Arc or light validation error | Use zero-based arcs `0`–`11` and lights `0`–`13`. |
 | Intensity validation error | Supply exactly three finite values from `0` through `255`. |
-| `--capture-hz is required` | Supply it for CLI OLAT/Playback mode, or pass `CaptureConfig` in Python. |
+| `--capture-hz is required` | Supply a positive finite rate for OLAT mode. |
+| `--sequence-id is required` | Upload or list sequences, then supply the server-generated ID for Playback mode. |
 | Cannot load a sequence | Check the local path and valid `.cbor` / `.cbor.zst` `PlaybackSequence` content. |
 
 ## Developing and maintaining

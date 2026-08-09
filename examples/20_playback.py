@@ -11,7 +11,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from pylightstage import LightStageClient, PlaybackSequence, SequenceBuilder, StageMode
+from pylightstage import LightStageClient, PlaybackSequence, SequenceBuilder
 
 # Default WebSocket endpoint for a locally running Light Stage server.
 SERVER_URI = "ws://127.0.0.1:8080/ws"
@@ -111,7 +111,7 @@ async def main() -> None:
 
             # Start the playback sequence.
             print("\nStarting playback...")
-            await client.set_mode(StageMode.PLAYBACK, sequence_id=uploaded.id)
+            await client.set_mode_playback(uploaded.id)
 
             # Wait until playback finishes, allowing some margin for the timeout
             timeout = uploaded.duration_secs + 10.0

@@ -1,4 +1,5 @@
 import copy
+import math
 from typing import Self, Tuple
 
 from .models import (
@@ -29,8 +30,8 @@ class SequenceBuilder:
         Calling `append_frame()` snapshots the current state into a frame.
         This is similar to `go()` for manual mode.
         """
-        if capture_hz <= 0:
-            raise ValueError("capture_hz must be > 0")
+        if not math.isfinite(capture_hz) or capture_hz <= 0:
+            raise ValueError("capture_hz must be a positive finite number")
         if num_arcs <= 0:
             raise ValueError("num_arcs must be > 0")
         if lights_per_arc <= 0:

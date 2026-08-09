@@ -225,16 +225,23 @@ class InteractiveSession:
             if choice is None or choice == "b":
                 return
             action, mode = actions[choice]
-            values: dict[str, Any] = {"action": action}
+            values: dict[str, Any] = {
+                "action": action,
+                "capture_hz": None,
+                "sequence_id": None,
+            }
             if mode is not None:
                 values["mode"] = mode
-                if mode in {"olat", "playback"}:
+                if mode == "olat":
                     capture_hz = self._number("Capture rate (Hz)", minimum=0.000001)
                     if capture_hz is None:
                         continue
                     values["capture_hz"] = capture_hz
-                else:
-                    values["capture_hz"] = None
+                elif mode == "playback":
+                    sequence_id = self._text("Uploaded sequence ID")
+                    if sequence_id is None:
+                        continue
+                    values["sequence_id"] = sequence_id
             self._execute(argparse.Namespace(**values))
 
     def _sequences(self) -> None:

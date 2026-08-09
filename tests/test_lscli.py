@@ -51,8 +51,11 @@ class FakeClient:
             "arc": arc, "light": light, "pol": pol,
         }))
 
-    def set_mode(self, *args):
-        self.calls.append(("set_mode", args))
+    def set_mode(self, *args, **kwargs):
+        self.calls.append(("set_mode", args, kwargs))
+
+    def trigger(self):
+        self.calls.append(("trigger", {}))
 
     def list_sequences(self):
         self.calls.append(("list_sequences", {}))
@@ -125,12 +128,41 @@ def test_capture_modes_require_a_capture_rate_before_connecting():
     assert FakeClient.instances == []
 
 
-def test_set_mode_passes_capture_configuration():
-    run(["set-mode", "playback", "--capture-hz", "24"], client_factory=FakeClient)
+def test_set_olat_mode_passes_capture_configuration():
+    run(["set-mode", "olat", "--capture-hz", "24"], client_factory=FakeClient)
 
     assert FakeClient.instances[0].calls == [("set_mode", (
-        StageMode.PLAYBACK, {"capture_hz": 24.0},
-    ))]
+        StageMode.OLAT, {"capture_hz": 24.0},
+    ), {})]
+
+
+def test_set_playback_mode_passes_uploaded_sequence_id():
+    run(
+        ["set-mode", "playback", "--sequence-id", "01PLAYBACK"],
+        client_factory=FakeClient,
+    )
+
+    assert FakeClient.instances[0].calls == [("set_mode", (
+        StageMode.PLAYBACK,
+    ), {"sequence_id": "01PLAYBACK"})]
+
+
+@pytest.mark.parametrize("capture_hz", ["0", "-1", "nan", "inf"])
+def test_olat_rejects_invalid_capture_rate_before_connecting(capture_hz):
+    with pytest.raises(ValueError, match="positive finite"):
+        run(
+            ["set-mode", "olat", "--capture-hz", capture_hz],
+            client_factory=FakeClient,
+        )
+
+    assert FakeClient.instances == []
+
+
+def test_playback_requires_sequence_id_before_connecting():
+    with pytest.raises(ValueError, match="--sequence-id"):
+        run(["set-mode", "playback"], client_factory=FakeClient)
+
+    assert FakeClient.instances == []
 
 
 def test_query_results_are_json_encoded():
@@ -217,6 +249,29 @@ def test_interactive_mode_reconnects_when_the_endpoint_changes():
         DEFAULT_URI, "ws://replacement/ws",
     ]
     assert all(client.closed for client in FakeClient.instances)
+
+
+def test_interactive_playback_and_manual_trigger_use_server_contract():
+    responses = iter([
+        "2",  # main: modes and camera
+        "5", "01PLAYBACK", "",  # playback sequence ID, then continue
+        "6", "",  # manual camera trigger, then continue
+        "b", "q",
+    ])
+
+    status = run(
+        ["interactive", "--no-color"],
+        client_factory=FakeClient,
+        stdout=StringIO(),
+        stderr=StringIO(),
+        input_func=lambda _prompt: next(responses),
+    )
+
+    assert status == 0
+    assert FakeClient.instances[0].calls == [
+        ("set_mode", (StageMode.PLAYBACK,), {"sequence_id": "01PLAYBACK"}),
+        ("trigger", {}),
+    ]
 
 
 def test_interactive_inspection_executes_queries_and_displays_results():

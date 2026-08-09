@@ -369,32 +369,37 @@ class LightStageClient:
             sequence_id: Required for 'PLAYBACK' mode
 
         Raises:
-            ValueError: If no config provided for OLAT or Playback modes
+            ValueError: If OLAT has no capture config or Playback has no sequence ID.
         """
         if isinstance(mode, dict):
-            payload = mode
+            payload = dict(mode)
+            if config is not None:
+                payload["config"] = config
+            if sequence_id is not None:
+                payload["id"] = str(sequence_id)
 
         else:
             mode_str = mode.value if isinstance(mode, StageMode) else mode
             payload: dict[str, Any] = {"type": mode_str}
 
-            if mode_str == "OLAT":
-                if config is None:
-                    raise ValueError(
-                        f"CaptureConfig is required when setting mode to 'OLAT'."
-                    )
+            if config is not None:
+                payload["config"] = config
+            if sequence_id is not None:
+                payload["id"] = str(sequence_id)
 
-                payload["config"] = (
-                    asdict(config) if isinstance(config, CaptureConfig) else config
-                )
+        mode_type = payload.get("type")
+        if isinstance(mode_type, StageMode):
+            mode_type = mode_type.value
+            payload["type"] = mode_type
 
-            elif mode_str == "Playback":
-                if sequence_id is None:
-                    raise ValueError(
-                        "sequence_id is required when setting mode to 'PLAYBACK'."
-                    )
+        capture_config = payload.get("config")
+        if isinstance(capture_config, CaptureConfig):
+            payload["config"] = asdict(capture_config)
 
-                payload["id"] = sequence_id
+        if mode_type == StageMode.OLAT.value and "config" not in payload:
+            raise ValueError("CaptureConfig is required when setting mode to 'OLAT'.")
+        if mode_type == StageMode.PLAYBACK.value and not payload.get("id"):
+            raise ValueError("sequence_id is required when setting mode to 'PLAYBACK'.")
 
         cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
@@ -410,10 +415,9 @@ class LightStageClient:
             StageMode.OLAT, config=CaptureConfig(capture_hz=capture_hz)
         )
 
-    async def set_mode_playback(self, capture_hz: float):
-        return await self.set_mode(
-            StageMode.PLAYBACK, config=CaptureConfig(capture_hz=capture_hz)
-        )
+    async def set_mode_playback(self, sequence_id: str):
+        """Start a playback sequence previously uploaded to the server."""
+        return await self.set_mode(StageMode.PLAYBACK, sequence_id=sequence_id)
 
     # Manual mode API
 

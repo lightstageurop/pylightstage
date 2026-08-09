@@ -120,7 +120,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     mode = commands.add_parser("set-mode", help="set the stage operation mode")
     mode.add_argument("mode", choices=("demo", "manual", "olat", "playback"))
-    mode.add_argument("--capture-hz", type=float, help="required for olat and playback")
+    mode.add_argument("--capture-hz", type=float, help="required for olat")
+    mode.add_argument(
+        "--sequence-id", help="ID of an uploaded sequence; required for playback"
+    )
 
     _add_set_command(commands, "set-light", "set one fixture", target="light")
     _add_clear_command(commands, "clear-light", "turn off one fixture", target="light")
@@ -169,8 +172,10 @@ def _dispatch(client: Any, args: argparse.Namespace) -> Any:
         return client.trigger()
     if action == "set-mode":
         mode = StageMode(args.mode.capitalize() if args.mode != "olat" else "OLAT")
-        if mode in (StageMode.OLAT, StageMode.PLAYBACK):
+        if mode == StageMode.OLAT:
             return client.set_mode(mode, {"capture_hz": args.capture_hz})
+        if mode == StageMode.PLAYBACK:
+            return client.set_mode(mode, sequence_id=args.sequence_id)
         return client.set_mode(mode)
 
     if action == "list-sequences":
@@ -228,11 +233,18 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--connect-timeout must be a positive finite number")
     if args.action != "set-mode":
         return
-    needs_capture_hz = args.mode in ("olat", "playback")
-    if needs_capture_hz and args.capture_hz is None:
-        raise ValueError("--capture-hz is required for olat and playback modes")
-    if not needs_capture_hz and args.capture_hz is not None:
-        raise ValueError("--capture-hz is only valid for olat and playback modes")
+    if args.capture_hz is not None and (
+        not math.isfinite(args.capture_hz) or args.capture_hz <= 0.0
+    ):
+        raise ValueError("--capture-hz must be a positive finite number")
+    if args.mode == "olat" and args.capture_hz is None:
+        raise ValueError("--capture-hz is required for olat mode")
+    if args.mode != "olat" and args.capture_hz is not None:
+        raise ValueError("--capture-hz is only valid for olat mode")
+    if args.mode == "playback" and not args.sequence_id:
+        raise ValueError("--sequence-id is required for playback mode")
+    if args.mode != "playback" and args.sequence_id is not None:
+        raise ValueError("--sequence-id is only valid for playback mode")
 
 
 def run(

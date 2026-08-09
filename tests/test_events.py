@@ -13,15 +13,20 @@ from pylightstage.client import LightStageClient
 pytestmark = pytest.mark.unit
 
 
-async def test_wait_for_event_success():
-    """Test that wait_for_event resolves when the matching event arrives."""
+@pytest.mark.parametrize(
+    ("event_name", "event_payload"),
+    [
+        ("CaptureFinished", "CaptureFinished"),
+        ("ModeChanged", {"ModeChanged": "Playback"}),
+    ],
+)
+async def test_wait_for_server_events(event_name, event_payload):
+    """Test the event shapes serialized by the Rust server."""
     client = LightStageClient()
 
     wait_task = asyncio.create_task(
-        client.wait_for_event("CaptureComplete", timeout=1.0)
+        client.wait_for_event(event_name, timeout=1.0)
     )
-
-    event_payload = {"CaptureComplete": {"status": "success"}}
 
     # Yield briefly so wait_task can register its callback
     await asyncio.sleep(0.01)
