@@ -18,11 +18,14 @@ pytestmark = pytest.mark.unit
 class FakeWebsocket:
     """A simple fake websocket that safely blocks when iterated over."""
 
+    def __init__(self):
+        self.closed = False
+
     async def send(self, *args, **kwargs):
         pass
 
     async def close(self, *args, **kwargs):
-        pass
+        self.closed = True
 
     async def __aiter__(self):
         try:
@@ -35,9 +38,10 @@ class FakeWebsocket:
 @patch("pylightstage.client.websockets.connect")
 def test_sync_client_lifecycle_and_methods(mock_connect):
     """Test that the Sync client correctly spawns a thread and proxies async calls."""
+    fake_websocket = FakeWebsocket()
 
     async def fake_connect(*args, **kwargs):
-        return FakeWebsocket()
+        return fake_websocket
 
     mock_connect.side_effect = fake_connect
 
@@ -59,6 +63,7 @@ def test_sync_client_lifecycle_and_methods(mock_connect):
     # Exiting the 'with' block should shut down the thread cleanly
     assert not sync_client._thread.is_alive()
     assert not sync_client.is_connected
+    assert fake_websocket.closed
 
 
 def test_sync_client_stops_its_background_thread_when_connection_fails():

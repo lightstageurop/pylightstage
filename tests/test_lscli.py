@@ -252,9 +252,9 @@ async def test_interactive_mode_works_against_a_local_simulated_server():
 
     assert status == 0
     assert received_commands == [{
-        "SetFixture": {
-            "arc_idx": 0,
-            "light_idx": 1,
-            "colour": {"rgb": (65535, 0, 0)},
-        },
-    }]
+            "SetFixture": {
+                "arc_idx": 0,
+                "light_idx": 1,
+                "colour": {"rgb": [65535, 0, 0]},
+            },
+        }]

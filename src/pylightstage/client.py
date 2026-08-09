@@ -74,6 +74,7 @@ class LightStageClient:
 
     async def close(self):
         """Safely close WebSocket connection."""
+        websocket = self._websocket
         if self._receiver_task:
             self._receiver_task.cancel()
             try:
@@ -82,9 +83,9 @@ class LightStageClient:
                 pass
             self._receiver_task = None
 
-        if self._websocket:
-            await self._websocket.close()
-            self._websocket = None
+        if websocket:
+            await websocket.close()
+        self._websocket = None
 
         self._disconnected_event.set()
         self._fail_pending_requests(RuntimeError("Connection closed by client"))
