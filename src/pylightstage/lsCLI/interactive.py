@@ -14,6 +14,18 @@ Dispatch = Callable[[Any, argparse.Namespace], Any]
 JsonDefault = Callable[[Any], Any]
 Input = Callable[[str], str]
 
+_ACTION_TITLES = {
+    "get-config": "Show server configuration",
+    "get-mode": "Show current mode",
+    "trigger": "Trigger camera capture",
+    "set-mode": "Change stage mode",
+    "list-sequences": "List playback sequences",
+    "get-sequence": "Show playback sequence",
+    "upload-sequence": "Upload playback sequence",
+    "delete-sequence": "Delete playback sequence",
+}
+_QUERY_ACTIONS = {"get-config", "get-mode", "list-sequences", "get-sequence"}
+
 
 class Terminal:
     """Small terminal renderer with an automatic plain-text fallback."""
@@ -271,14 +283,22 @@ class InteractiveSession:
             self._execute(argparse.Namespace(action=action))
 
     def _execute(self, args: argparse.Namespace) -> None:
+        title = _ACTION_TITLES.get(
+            args.action, args.action.replace("-", " ").capitalize()
+        )
+        self._begin_page(f"Running: {title}…")
+        self.terminal.write("Waiting for the server to respond…")
         try:
             result = self.dispatch(self.client, args)
         except Exception as exc:
-            self._begin_page()
+            self._begin_page(f"Failed: {title}")
             self.terminal.failure(str(exc))
         else:
-            self._begin_page()
-            self.terminal.success("Action completed.")
+            self._begin_page(f"Result: {title}")
+            if result is None and args.action in _QUERY_ACTIONS:
+                self.terminal.warning("The server returned no data.")
+            else:
+                self.terminal.success("Action completed.")
             if result is not None:
                 self.terminal.write(json.dumps(result, default=self.json_default, indent=2, sort_keys=True))
         self._pause()

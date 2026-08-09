@@ -62,6 +62,10 @@ class FakeClient:
         self.calls.append(("get_config", {}))
         return {"arcs": 12}
 
+    def get_mode(self):
+        self.calls.append(("get_mode", {}))
+        return StageMode.MANUAL
+
 
 class TtyStringIO(StringIO):
     def isatty(self):
@@ -213,6 +217,37 @@ def test_interactive_mode_reconnects_when_the_endpoint_changes():
         DEFAULT_URI, "ws://replacement/ws",
     ]
     assert all(client.closed for client in FakeClient.instances)
+
+
+def test_interactive_inspection_executes_queries_and_displays_results():
+    responses = iter([
+        "4",  # main: inspect server
+        "1", "",  # configuration, then continue
+        "2", "",  # current mode, then continue
+        "3", "",  # sequence list, then continue
+        "b", "q",
+    ])
+    output = StringIO()
+
+    status = run(
+        ["interactive", "--no-color"],
+        client_factory=FakeClient,
+        stdout=output,
+        stderr=StringIO(),
+        input_func=lambda _prompt: next(responses),
+    )
+
+    assert status == 0
+    assert FakeClient.instances[0].calls == [
+        ("get_config", {}),
+        ("get_mode", {}),
+        ("list_sequences", {}),
+    ]
+    rendered = output.getvalue()
+    assert "Running: Show server configuration" in rendered
+    assert '"arcs": 12' in rendered
+    assert '"Manual"' in rendered
+    assert '"name": "demo"' in rendered
 
 
 async def test_interactive_mode_works_against_a_local_simulated_server():
