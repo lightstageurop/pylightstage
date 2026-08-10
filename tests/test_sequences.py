@@ -3,11 +3,11 @@ tests/test_sequences.py
 
 Tests playback sequence models, serialization, and sequence builder behavior.
 """
+
 import pytest
 
 from pylightstage.models import PlaybackSequence, SequenceSummary, StageFrame
 from pylightstage.sequences import SequenceBuilder
-
 
 pytestmark = pytest.mark.unit
 
@@ -193,8 +193,7 @@ def test_sequence_builder_rejects_invalid_capture_rate(capture_hz):
 def test_sequence_builder_set_light_updates_rgb_and_white_for_rgbw():
     builder = SequenceBuilder(name="rgbw", num_arcs=1, lights_per_arc=1)
 
-    returned = builder.set_light(
-        0, 0, color="rgbw", intensity=(255.0, 128.0, 0.0))
+    returned = builder.set_light(0, 0, color="rgbw", intensity=(255.0, 128.0, 0.0))
 
     assert returned is builder
     assert builder._current_rgb[0][0] == (65535, 32896, 0)
@@ -278,7 +277,8 @@ def test_sequence_builder_append_frame_snapshots_current_state():
 
 def test_sequence_builder_append_frame_auto_clear_resets_state_after_append():
     builder = SequenceBuilder(
-        name="autoclear", num_arcs=1, lights_per_arc=1, auto_clear=True)
+        name="autoclear", num_arcs=1, lights_per_arc=1, auto_clear=True
+    )
     builder.set_light(0, 0, intensity=(255.0, 255.0, 255.0))
 
     builder.append_frame()
@@ -298,8 +298,7 @@ def test_sequence_builder_set_light_rejects_invalid_arc():
 
 
 def test_sequence_builder_set_light_rejects_invalid_light():
-    builder = SequenceBuilder(name="invalid_light",
-                              num_arcs=1, lights_per_arc=1)
+    builder = SequenceBuilder(name="invalid_light", num_arcs=1, lights_per_arc=1)
 
     with pytest.raises(IndexError, match="light index"):
         builder.set_light(1, 0)

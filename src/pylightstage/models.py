@@ -1,16 +1,16 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Literal, Tuple, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import cbor2
 import zstandard as zstd
 
 # Backwards compatible intensity as 0.0-255.0
-FixtureIntensity: TypeAlias = Tuple[float, float, float]
+FixtureIntensity: TypeAlias = tuple[float, float, float]
 
 # Actual fixture values as 0-65535, sent to server
-FixtureValue = Tuple[int, int, int]
+FixtureValue = tuple[int, int, int]
 
 # Selectors for set_(light/arc/lightstage) methods
 ColorMode = Literal["rgb", "w", "rgbw"]
@@ -48,8 +48,8 @@ class SequenceSummary:
 class StageFrame:
     """A single frame, capturing the states of all white and colour fixtures on the light stage."""
 
-    white_fixtures: List[List[FixtureValue]] = field(default_factory=list)
-    rgb_fixtures: List[List[FixtureValue]] = field(default_factory=list)
+    white_fixtures: list[list[FixtureValue]] = field(default_factory=list)
+    rgb_fixtures: list[list[FixtureValue]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,7 +59,7 @@ class StageFrame:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StageFrame":
-        def normalise(grid: Any) -> List[List[FixtureValue]]:
+        def normalise(grid: Any) -> list[list[FixtureValue]]:
             return [[tuple(val) for val in row] for row in (grid or [])]
 
         return cls(
@@ -79,7 +79,7 @@ class PlaybackSequence:
 
     name: str
     capture_hz: float
-    frames: List[StageFrame] = field(default_factory=list)
+    frames: list[StageFrame] = field(default_factory=list)
 
     @property
     def total_frames(self) -> int:

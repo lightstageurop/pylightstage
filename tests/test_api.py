@@ -2,15 +2,16 @@
 tests/test_api.py
 
 Tests the high-level API methods (e.g., turn_on_light, get_config).
-By mocking `_send_and_recv`, we verify that the client constructs the correct 
-dictionary payloads and correctly manages batched state, isolating the logic 
+By mocking `_send_and_recv`, we verify that the client constructs the correct
+dictionary payloads and correctly manages batched state, isolating the logic
 from the network layer.
 """
-import pytest
+
 from unittest.mock import AsyncMock
 
-from pylightstage import CaptureConfig, LightStageClient, StageMode
+import pytest
 
+from pylightstage import CaptureConfig, LightStageClient, StageMode
 
 pytestmark = pytest.mark.unit
 
@@ -34,15 +35,11 @@ async def test_set_mode_payloads():
     client._send_and_recv = AsyncMock(return_value=None)
 
     await client.set_mode(StageMode.MANUAL)
-    assert client._send_and_recv.call_args[0][0] == {
-        "SetMode": {"type": "Manual"}
-    }
+    assert client._send_and_recv.call_args[0][0] == {"SetMode": {"type": "Manual"}}
 
     client._send_and_recv.reset_mock()
     await client.set_mode(StageMode.DEMO)
-    assert client._send_and_recv.call_args[0][0] == {
-        "SetMode": {"type": "Demo"}
-    }
+    assert client._send_and_recv.call_args[0][0] == {"SetMode": {"type": "Demo"}}
 
     client._send_and_recv.reset_mock()
     await client.set_mode_olat(25.0)
@@ -57,10 +54,12 @@ async def test_set_mode_payloads():
     }
 
     client._send_and_recv.reset_mock()
-    await client.set_mode({
-        "type": StageMode.OLAT,
-        "config": CaptureConfig(capture_hz=15.0),
-    })
+    await client.set_mode(
+        {
+            "type": StageMode.OLAT,
+            "config": CaptureConfig(capture_hz=15.0),
+        }
+    )
     assert client._send_and_recv.call_args[0][0] == {
         "SetMode": {"type": "OLAT", "config": {"capture_hz": 15.0}}
     }
@@ -98,7 +97,7 @@ async def test_turn_on_light_immediate():
     client = LightStageClient()
     client._send_and_recv = AsyncMock(return_value=None)
 
-    await client.turn_on_light(light=5, arc=2, color='rgb', intensity=(255, 0, 0))
+    await client.turn_on_light(light=5, arc=2, color="rgb", intensity=(255, 0, 0))
 
     client._send_and_recv.assert_called_once()
     cmd = client._send_and_recv.call_args[0][0]
@@ -115,10 +114,12 @@ async def test_pending_updates_merge_colour_channels():
     client = LightStageClient()
     client._send_and_recv = AsyncMock(return_value=None)
 
-    await client.turn_on_light(light=1, arc=0, color='rgb',
-                               intensity=(255, 0, 0), go=False)
-    await client.turn_on_light(light=1, arc=0, color='w',
-                               intensity=(0, 255, 0), go=False)
+    await client.turn_on_light(
+        light=1, arc=0, color="rgb", intensity=(255, 0, 0), go=False
+    )
+    await client.turn_on_light(
+        light=1, arc=0, color="w", intensity=(0, 255, 0), go=False
+    )
     await client.go()
 
     fixture = client._send_and_recv.call_args[0][0]["SetFixtures"][0]
@@ -151,13 +152,13 @@ async def test_arc_and_lightstage_commands():
     client = LightStageClient()
     client._send_and_recv = AsyncMock(return_value=None)
 
-    await client.turn_on_arc(arc=1, color='w', intensity=(0, 0, 255.0))
+    await client.turn_on_arc(arc=1, color="w", intensity=(0, 0, 255.0))
     cmd = client._send_and_recv.call_args[0][0]
     assert "SetArc" in cmd
     assert cmd["SetArc"]["colour"]["white"] == (0, 0, 65535)
 
     client._send_and_recv.reset_mock()
-    await client.turn_on_lightstage(color='rgbw')
+    await client.turn_on_lightstage(color="rgbw")
     cmd = client._send_and_recv.call_args[0][0]
     assert "SetLightstage" in cmd
 
@@ -167,15 +168,13 @@ async def test_polarized_light_routes_to_expected_fixture_type():
     client = LightStageClient()
     client._send_and_recv = AsyncMock(return_value=None)
 
-    await client.turn_on_pol_light(light=0, arc=0, pol='pp',
-                                   intensity=(255, 0, 0))
+    await client.turn_on_pol_light(light=0, arc=0, pol="pp", intensity=(255, 0, 0))
     cmd = client._send_and_recv.call_args[0][0]
     assert "rgb" in cmd["SetFixture"]["colour"]
     assert "white" not in cmd["SetFixture"]["colour"]
 
     client._send_and_recv.reset_mock()
-    await client.turn_on_pol_light(light=0, arc=0, pol='cp',
-                                   intensity=(255, 0, 0))
+    await client.turn_on_pol_light(light=0, arc=0, pol="cp", intensity=(255, 0, 0))
     cmd = client._send_and_recv.call_args[0][0]
     assert "white" in cmd["SetFixture"]["colour"]
     assert "rgb" not in cmd["SetFixture"]["colour"]
@@ -191,7 +190,7 @@ async def test_show_env_map_batches_all_fixtures():
     client._send_and_recv = AsyncMock(return_value=None)
     env_map = EnvMap([[1, 2, 3] for _ in range(168)])
 
-    await client.show_env_map(env_map, color='rgb', scale=0.5)
+    await client.show_env_map(env_map, color="rgb", scale=0.5)
 
     cmd = client._send_and_recv.call_args[0][0]
     fixtures = cmd["SetFixtures"]
@@ -209,7 +208,7 @@ async def test_show_pol_env_map_new_can_limit_to_rgb_or_white():
     client._send_and_recv = AsyncMock(return_value=None)
     env_map = EnvMap([[255, 255, 255] for _ in range(168)])
 
-    await client.show_pol_env_map(env_map, pol='pp', color='rgb')
+    await client.show_pol_env_map(env_map, pol="pp", color="rgb")
 
     fixtures = client._send_and_recv.call_args[0][0]["SetFixtures"]
     assert len(fixtures) == 84
@@ -222,7 +221,7 @@ async def test_turn_on_horizontal_arc_batches_light_index_across_arcs():
     client = LightStageClient()
     client._send_and_recv = AsyncMock(return_value=None)
 
-    await client.turn_on_horizontal_arc(3, color='w', intensity=(0, 0, 255))
+    await client.turn_on_horizontal_arc(3, color="w", intensity=(0, 0, 255))
 
     fixtures = client._send_and_recv.call_args[0][0]["SetFixtures"]
     assert len(fixtures) == 12

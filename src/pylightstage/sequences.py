@@ -1,6 +1,6 @@
 import copy
 import math
-from typing import Self, Tuple
+from typing import Self
 
 from .models import (
     ColorMode,

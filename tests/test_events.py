@@ -4,11 +4,12 @@ tests/test_events.py
 Tests the asynchronous event listening and dispatching mechanism.
 Verifies that blocking methods yield correctly when target events arrive.
 """
+
 import asyncio
+
 import pytest
 
 from pylightstage.client import LightStageClient
-
 
 pytestmark = pytest.mark.unit
 

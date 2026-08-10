@@ -5,12 +5,13 @@ Tests the synchronous wrapper client.
 Verifies that the background event loop thread is spawned, managed,
 and shut down safely without hanging the main thread.
 """
+
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from pylightstage.client import LightStageSyncClient
+import pytest
 
+from pylightstage.client import LightStageSyncClient
 
 pytestmark = pytest.mark.unit
 
@@ -52,8 +53,7 @@ def test_sync_client_lifecycle_and_methods(mock_connect):
         mock_connect.assert_called_once_with("ws://sync_test")
 
         # Mock the internal send_and_recv on the underlying async client
-        sync_client._client._send_and_recv = AsyncMock(
-            return_value={"arcs": 10})
+        sync_client._client._send_and_recv = AsyncMock(return_value={"arcs": 10})
 
         # Call an async method synchronously
         result = sync_client.get_config()

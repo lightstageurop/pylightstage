@@ -20,7 +20,6 @@ async def main():
     print("Connecting to LightStage...")
 
     async with LightStageClient(uri="ws://127.0.0.1:8080/ws") as client:
-
         # --- Register a callback
         # Called whenever the server broadcasts an event.
         @client.on_event
@@ -45,7 +44,7 @@ async def main():
             )
             print(f"OLAT complete: {capture_event}")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("Timed out waiting for 'CaptureFinished'.")
 
         # Continue listening for background events forever, or until server connection fails.

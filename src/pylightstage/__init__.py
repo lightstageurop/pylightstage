@@ -9,11 +9,11 @@ from .models import (
 from .sequences import SequenceBuilder
 
 __all__ = [
+    "CaptureConfig",
     "LightStageClient",
     "LightStageSyncClient",
-    "SequenceBuilder",
-    "CaptureConfig",
     "PlaybackSequence",
+    "SequenceBuilder",
     "SequenceSummary",
     "StageFrame",
     "StageMode",

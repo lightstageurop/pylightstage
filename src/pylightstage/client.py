@@ -4,8 +4,9 @@ import inspect
 import logging
 import math
 import threading
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Any
 
 import cbor2
 import websockets
@@ -51,15 +52,15 @@ class LightStageClient:
         self.lights_per_arc = 14
 
         self._event_callbacks: list[Callable[[Any], Any]] = []
-        self._pending_requests: dict[int, asyncio.Future] = {}
-        self._receiver_task: Optional[asyncio.Task] = None
+        self._pending_requests: dict[int, asyncio.Future[Any]] = {}
+        self._receiver_task: asyncio.Task[Any] | None = None
 
         # used for `wait_until_disconnected`
         self._disconnected_event = asyncio.Event()
 
         # Local buffer for fixture updates (used when go=False).
         # (arc_idx, light_idx) -> UpdateColourRequest
-        self._pending_updates: dict[Tuple[int, int], dict] = {}
+        self._pending_updates: dict[tuple[int, int], dict[str, Any]] = {}
 
     async def connect(self):
         """Establish WebSocket connection to light stage server."""
@@ -149,7 +150,7 @@ class LightStageClient:
             self._websocket = None
             self._disconnected_event.set()
 
-    def _dispatch_callback(self, callback: Callable, event: Any):
+    def _dispatch_callback(self, callback: Callable[[Any], Any], event: Any):
         try:
             if inspect.iscoroutinefunction(callback):
                 asyncio.create_task(callback(event))
@@ -189,7 +190,7 @@ class LightStageClient:
         try:
             resp = await asyncio.wait_for(fut, timeout=timeout)
             return self._unwrap_response(resp)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise TimeoutError(
                 f"Server did not respond to command (id={req_id}, cmd={cmd}) within {timeout}s"
             )
@@ -233,7 +234,9 @@ class LightStageClient:
     def _validate_light(self, light: int) -> int:
         return validate_index("light", light, size=self.lights_per_arc)
 
-    def _build_color_req(self, color: ColorMode, intensity: FixtureIntensity) -> dict:
+    def _build_color_req(
+        self, color: ColorMode, intensity: FixtureIntensity
+    ) -> dict[str, Any]:
         """Helper to build the UpdateColourRequest payload."""
         color = color_mode(color)
         intensity = validate_intensity(intensity)
@@ -243,7 +246,7 @@ class LightStageClient:
             **({"white": value} if color in ("w", "rgbw") else {}),
         }
 
-    def _queue_update(self, arc: int, light: int, colour_req: dict):
+    def _queue_update(self, arc: int, light: int, colour_req: dict[str, Any]):
         """Queue a colour request while allowing rgb and w requests to co-exist."""
         key = (arc, light)
         current = self._pending_updates.setdefault(key, {})
@@ -298,7 +301,7 @@ class LightStageClient:
         await self._send_and_recv({"DeleteSequence": str(sequence_id)})
 
     async def upload_sequence(
-        self, sequence: Union[PlaybackSequence, dict], timeout: float = 60.0
+        self, sequence: PlaybackSequence | dict[str, Any], timeout: float = 60.0
     ) -> SequenceSummary:
         """
         Upload a PlaybackSequence to the server.
@@ -321,7 +324,7 @@ class LightStageClient:
         self,
         event_name: str,
         # predicate: Optional[Callable[[Any], bool]] = None
-        timeout: Optional[float] = 30.0,
+        timeout: float | None = 30.0,
     ) -> Any:
         """Block until a specific event arrives."""
         fut = asyncio.get_running_loop().create_future()
@@ -345,20 +348,20 @@ class LightStageClient:
 
     # Configuration and Modes
 
-    async def get_config(self) -> Optional[dict]:
+    async def get_config(self) -> dict[str, Any] | None:
         """Get the server's configuration."""
         return await self._send_and_recv("GetConfig")
 
-    async def get_mode(self) -> Optional[StageMode]:
+    async def get_mode(self) -> StageMode | None:
         """Get the current operation mode of the light stage."""
         mode_str = await self._send_and_recv("GetMode")
         return StageMode(mode_str) if mode_str else None
 
     async def set_mode(
         self,
-        mode: Union[StageMode, str, dict],
-        config: Optional[Union[CaptureConfig, dict]] = None,
-        sequence_id: Optional[str] = None,
+        mode: StageMode | str | dict[str, Any],
+        config: CaptureConfig | dict[str, Any] | None = None,
+        sequence_id: str | None = None,
     ):
         """
         Set the operation mode of the light stage.
@@ -603,7 +606,7 @@ class LightStageSyncClient:
         # Underlying async implementation
         self._client = LightStageClient(*args, **kwargs)
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
