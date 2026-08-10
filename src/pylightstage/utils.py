@@ -1,6 +1,6 @@
 import math
 import operator
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 
 from .models import ColorMode, FixtureIntensity, FixtureValue, PolarizationMode
 
@@ -40,7 +40,7 @@ def unit_scale(value: float) -> float:
     return value
 
 
-def validate_intensity(intensity: Iterable[float]) -> Tuple[float, float, float]:
+def validate_intensity(intensity: Iterable[float]) -> tuple[float, float, float]:
     try:
         values = tuple(float(value) for value in intensity)
     except (TypeError, ValueError) as exc:

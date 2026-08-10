@@ -7,17 +7,23 @@ This briefly shows how to
 - upload it to the server, and
 - play it back on the light stage.
 """
+
 import asyncio
 from pathlib import Path
-from typing import Any
 
-from pylightstage import LightStageClient, PlaybackSequence, SequenceBuilder, StageMode
+from pylightstage import (
+    LightStageClient,
+    PlaybackSequence,
+    SequenceBuilder,
+    SequenceSummary,
+    StageMode,
+)
 
 # Default WebSocket endpoint for a locally running Light Stage server.
 SERVER_URI = "ws://127.0.0.1:8080/ws"
 
 
-def print_summary(summary: Any, title: str = "Sequence Summary") -> None:
+def print_summary(summary: SequenceSummary, title: str = "Sequence Summary") -> None:
     """Print a concise summary of a playback sequence."""
     print(f"\n== {title} ==")
     print(f"  ID       : {summary.id}")
@@ -32,13 +38,12 @@ def build_blink_sequence() -> PlaybackSequence:
 
     for _ in range(5):  # 5 repeats
         for arc in range(12):  # 2 frames for each arc
-            (
+            _ = (
                 builder
                 # green frame with one white arc
                 .set_lightstage(color="rgb", intensity=(0.0, 255.0, 0.0))
                 .set_arc(arc=arc, color="w", intensity=(255.0, 255.0, 255.0))
                 .append_frame()  # commit frame
-
                 # blue frame with one white arc
                 .set_lightstage(color="rgb", intensity=(0.0, 0.0, 255.0))
                 .set_arc(arc=arc, color="w", intensity=(255.0, 255.0, 255.0))

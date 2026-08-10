@@ -5,12 +5,13 @@ Tests the WebSocket lifecycle (connecting, disconnecting, and context managers).
 We mock the underlying websockets module so these tests run instantly without
 requiring the physical hardware.
 """
+
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from pylightstage.client import LightStageClient
+import pytest
 
+from pylightstage.client import LightStageClient
 
 pytestmark = pytest.mark.unit
 

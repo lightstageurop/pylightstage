@@ -5,11 +5,11 @@ Tests the pure data-transformation utilities of the client.
 These tests verify that mathematical scaling and dictionary formatting
 work correctly before any network requests are built.
 """
+
 import pytest
 
 from pylightstage.client import LightStageClient
 from pylightstage.utils import to_16b
-
 
 pytestmark = pytest.mark.unit
 
@@ -27,13 +27,13 @@ def test_build_color_req():
     client = LightStageClient()
 
     # RGB mode
-    rgb_res = client._build_color_req('rgb', (255.0, 0.0, 0.0))
-    assert 'rgb' in rgb_res and 'white' not in rgb_res
-    assert rgb_res['rgb'] == (65535, 0, 0)
+    rgb_res = client._build_color_req("rgb", (255.0, 0.0, 0.0))
+    assert "rgb" in rgb_res and "white" not in rgb_res
+    assert rgb_res["rgb"] == (65535, 0, 0)
 
     # RGBW mode
-    rgbw_res = client._build_color_req('rgbw', (255.0, 255.0, 255.0))
-    assert 'rgb' in rgbw_res and 'white' in rgbw_res
+    rgbw_res = client._build_color_req("rgbw", (255.0, 255.0, 255.0))
+    assert "rgb" in rgbw_res and "white" in rgbw_res
 
 
 def test_unwrap_response():
@@ -47,5 +47,4 @@ def test_unwrap_response():
 
     # Server error case
     with pytest.raises(RuntimeError, match=r"Server Error \(404\): Not found"):
-        client._unwrap_response(
-            {"Error": {"code": 404, "message": "Not found"}})
+        client._unwrap_response({"Error": {"code": 404, "message": "Not found"}})

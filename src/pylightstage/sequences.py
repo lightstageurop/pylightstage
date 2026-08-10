@@ -1,5 +1,5 @@
 import copy
-from typing import Self, Tuple
+from typing import Self
 
 from .models import (
     ColorMode,

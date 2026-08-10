@@ -5,15 +5,16 @@ Integration tests that run against the physical Light Stage server.
 If the server is unreachable (e.g., offline or off the VPN), these tests
 will automatically skip rather than fail the test suite.
 """
+
 import asyncio
+
 import pytest
 
-from pylightstage import LightStageClient, StageMode, CaptureConfig
-
+from pylightstage import LightStageClient, StageMode
 
 pytestmark = pytest.mark.integration
 
-REAL_SERVER_URI = "ws://127.0.0.1:8080/ws"
+REAL_SERVER_URI = "ws://172.30.40.238:8080/ws"
 
 
 @pytest.fixture
@@ -39,6 +40,7 @@ async def real_client():
 
 
 # --- Integration Tests ---
+
 
 async def test_integration_get_config(real_client):
     """Verify we can fetch and parse the real server's configuration."""
@@ -88,7 +90,7 @@ async def test_integration_fixture_forces_manual_mode(real_client):
 
         # 2. Buffer a light update without sending it (go=False)
         await real_client.turn_on_light(
-            light=1, arc=1, color='rgb', intensity=dim_blue, go=False
+            light=1, arc=1, color="rgb", intensity=dim_blue, go=False
         )
 
         # 3. Verify the mode is STILL Demo (the server hasn't seen the command yet)
@@ -119,7 +121,7 @@ async def test_integration_single_light_cycle(real_client):
     dim_white = (10.0, 10.0, 10.0)
 
     # 1. Turn on light 1 on arc 1
-    await real_client.turn_on_light(light=1, arc=1, color='rgbw', intensity=dim_white)
+    await real_client.turn_on_light(light=1, arc=1, color="rgbw", intensity=dim_white)
     await asyncio.sleep(0.5)
 
     # 2. Turn off
@@ -131,8 +133,12 @@ async def test_integration_batching(real_client):
     dim_red = (10.0, 0.0, 0.0)
 
     # Queue up two lights
-    await real_client.turn_on_light(light=1, arc=1, color='rgb', intensity=dim_red, go=False)
-    await real_client.turn_on_light(light=2, arc=1, color='rgb', intensity=dim_red, go=False)
+    await real_client.turn_on_light(
+        light=1, arc=1, color="rgb", intensity=dim_red, go=False
+    )
+    await real_client.turn_on_light(
+        light=2, arc=1, color="rgb", intensity=dim_red, go=False
+    )
 
     # Fire the batch
     await real_client.go()
