@@ -25,6 +25,35 @@ _COLOURS = ("rgb", "w", "rgbw")
 _POLARIZATIONS = ("up", "cp", "pp")
 
 
+_FIXTURE_METHODS = {
+    "set-light": "set_light",
+    "clear-light": "clear_light",
+    "set-arc": "set_arc",
+    "clear-arc": "clear_arc",
+    "set-lightstage": "set_lightstage",
+    "clear-lightstage": "clear_lightstage",
+    "set-horizontal-arc": "set_horizontal_arc",
+    "clear-horizontal-arc": "clear_horizontal_arc",
+    "set-polarized-light": "set_pol_light",
+    "clear-polarized-light": "clear_pol_light",
+}
+
+# fmt: off
+_FIXTURE_COMMANDS_SPEC = (
+    ("set-light", "set one fixture", "light", False, True),
+    ("clear-light", "turn off one fixture", "light", False, False),
+    ("set-arc", "set all fixtures in one arc", "arc", False, True),
+    ("clear-arc", "turn off all fixtures in one arc", "arc", False, False),
+    ("set-lightstage", "set every fixture", "lightstage", False, True),
+    ("clear-lightstage", "turn off every fixture", "lightstage", False, False),
+    ("set-horizontal-arc", "set one light index across all arcs", "horizontal_arc", False, True),
+    ("clear-horizontal-arc", "turn off one light index across all arcs", "horizontal_arc", False, False),
+    ("set-polarized-light", "set one polarized logical fixture", "light", True, True),
+    ("clear-polarized-light", "turn off one polarized logical fixture", "light", True, False),
+)
+# fmt: on
+
+
 def _add_colour_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--color",
@@ -45,53 +74,30 @@ def _add_intensity_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_set_command(
-    subparsers: argparse._SubParsersAction,
+def _add_fixture_command(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
     name: str,
     help_text: str,
     *,
     target: str,
     polarized: bool = False,
+    is_set: bool = True,
 ) -> None:
     parser = subparsers.add_parser(name, help=help_text)
     parser.set_defaults(action=name, target=target)
-    if target == "light":
+    if target in ("light", "arc"):
         parser.add_argument("--arc", required=True, type=int)
+    if target in ("light", "horizontal_arc"):
         parser.add_argument("--light", required=True, type=int)
-    elif target == "arc":
-        parser.add_argument("--arc", required=True, type=int)
-    elif target == "horizontal_arc":
-        parser.add_argument("--light", required=True, type=int)
+
     if polarized:
         parser.add_argument("--polarization", choices=_POLARIZATIONS, default="up")
         parser.add_argument("--color", choices=_COLOURS, help=argparse.SUPPRESS)
     else:
         _add_colour_options(parser)
-    _add_intensity_option(parser)
 
-
-def _add_clear_command(
-    subparsers: argparse._SubParsersAction,
-    name: str,
-    help_text: str,
-    *,
-    target: str,
-    polarized: bool = False,
-) -> None:
-    parser = subparsers.add_parser(name, help=help_text)
-    parser.set_defaults(action=name, target=target)
-    if target == "light":
-        parser.add_argument("--arc", required=True, type=int)
-        parser.add_argument("--light", required=True, type=int)
-    elif target == "arc":
-        parser.add_argument("--arc", required=True, type=int)
-    elif target == "horizontal_arc":
-        parser.add_argument("--light", required=True, type=int)
-    if polarized:
-        parser.add_argument("--polarization", choices=_POLARIZATIONS, default="up")
-        parser.add_argument("--color", choices=_COLOURS, help=argparse.SUPPRESS)
-    else:
-        _add_colour_options(parser)
+    if is_set:
+        _add_intensity_option(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -115,9 +121,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(no_color=False)
     commands = parser.add_subparsers(dest="action", title="commands")
 
-    commands.add_parser("get-config", help="print the server configuration")
-    commands.add_parser("get-mode", help="print the current stage mode")
-    commands.add_parser("trigger", help="trigger a capture in manual mode")
+    # simple queries without arguments
+    for cmd, help_txt in (
+        ("get-config", "print the server configuration"),
+        ("get-mode", "print the current stage mode"),
+        ("trigger", "trigger a capture in manual mode"),
+        ("list-sequences", "list uploaded playback sequences"),
+    ):
+        commands.add_parser(cmd, help=help_txt)
+
     interactive = commands.add_parser(
         "interactive",
         aliases=["i"],
@@ -136,57 +148,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--sequence-id", help="ID of an uploaded sequence; required for playback"
     )
 
-    _add_set_command(commands, "set-light", "set one fixture", target="light")
-    _add_clear_command(commands, "clear-light", "turn off one fixture", target="light")
-    _add_set_command(commands, "set-arc", "set all fixtures in one arc", target="arc")
-    _add_clear_command(
-        commands, "clear-arc", "turn off all fixtures in one arc", target="arc"
-    )
-    _add_set_command(
-        commands, "set-lightstage", "set every fixture", target="lightstage"
-    )
-    _add_clear_command(
-        commands, "clear-lightstage", "turn off every fixture", target="lightstage"
-    )
-    _add_set_command(
-        commands,
-        "set-horizontal-arc",
-        "set one light index across all arcs",
-        target="horizontal_arc",
-    )
-    _add_clear_command(
-        commands,
-        "clear-horizontal-arc",
-        "turn off one light index across all arcs",
-        target="horizontal_arc",
-    )
-    _add_set_command(
-        commands,
-        "set-polarized-light",
-        "set one polarized logical fixture",
-        target="light",
-        polarized=True,
-    )
-    _add_clear_command(
-        commands,
-        "clear-polarized-light",
-        "turn off one polarized logical fixture",
-        target="light",
-        polarized=True,
-    )
+    # manual mode fixture commands
+    for cmd, help_text, target, pol, is_set in _FIXTURE_COMMANDS_SPEC:
+        _add_fixture_command(
+            commands,
+            cmd,
+            help_text=help_text,
+            target=target,
+            polarized=pol,
+            is_set=is_set,
+        )
 
-    commands.add_parser("list-sequences", help="list uploaded playback sequences")
-    get_sequence = commands.add_parser("get-sequence", help="print sequence metadata")
-    get_sequence.add_argument("sequence_id")
-    delete_sequence = commands.add_parser(
-        "delete-sequence", help="delete an uploaded sequence"
-    )
-    delete_sequence.add_argument("sequence_id")
-    upload_sequence = commands.add_parser(
-        "upload-sequence",
-        help="upload a .cbor or .cbor.zst playback sequence",
-    )
-    upload_sequence.add_argument("path", type=Path)
+    # sequence commands
+    for cmd, help_text, arg_name, arg_type in (
+        ("get-sequence", "print sequence metadata", "sequence_id", str),
+        ("delete-sequence", "delete an uploaded sequence", "sequence_id", str),
+        (
+            "upload-sequence",
+            "upload a .cbor or .cbor.zst playback sequence",
+            "path",
+            Path,
+        ),
+    ):
+        p = commands.add_parser(cmd, help=help_text)
+        p.add_argument(arg_name, type=arg_type)
 
     return parser
 
@@ -217,18 +202,7 @@ def _dispatch(client: Any, args: argparse.Namespace) -> Any:
     if action == "upload-sequence":
         return client.upload_sequence(PlaybackSequence.load(args.path))
 
-    method_name = {
-        "set-light": "set_light",
-        "clear-light": "clear_light",
-        "set-arc": "set_arc",
-        "clear-arc": "clear_arc",
-        "set-lightstage": "set_lightstage",
-        "clear-lightstage": "clear_lightstage",
-        "set-horizontal-arc": "set_horizontal_arc",
-        "clear-horizontal-arc": "clear_horizontal_arc",
-        "set-polarized-light": "set_pol_light",
-        "clear-polarized-light": "clear_pol_light",
-    }.get(action)
+    method_name = _FIXTURE_METHODS.get(action)
     if method_name is None:  # defensive: parser controls all command values
         raise ValueError(f"Unsupported command: {action}")
 
@@ -247,8 +221,8 @@ def _dispatch(client: Any, args: argparse.Namespace) -> Any:
     return getattr(client, method_name)(**kwargs)
 
 
-def _json_default(value: Any) -> Any:
-    if is_dataclass(value):
+def _json_default(value: object) -> object:
+    if is_dataclass(value) and not isinstance(value, type):
         return asdict(value)
     if isinstance(value, Enum):
         return value.value
@@ -280,7 +254,7 @@ def _validate_args(args: argparse.Namespace) -> None:
 def run(
     argv: Sequence[str] | None = None,
     *,
-    client_factory: Callable[..., Any] = LightStageSyncClient,
+    client_factory: Callable[..., LightStageSyncClient] = LightStageSyncClient,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     input_func: Callable[[str], str] = input,

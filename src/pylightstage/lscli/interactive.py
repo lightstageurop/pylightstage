@@ -27,6 +27,31 @@ _ACTION_TITLES = {
 _QUERY_ACTIONS = {"get-config", "get-mode", "list-sequences", "get-sequence"}
 
 
+# fmt: off
+_FIXTURE_MENU: tuple[tuple[str, str, str, str, bool], ...] = (
+    ("1", "Set one fixture", "set-light", "light", False),
+    ("2", "Clear one fixture", "clear-light", "light", False),
+    ("3", "Set an arc", "set-arc", "arc", False),
+    ("4", "Clear an arc", "clear-arc", "arc", False),
+    ("5", "Set the full stage", "set-lightstage", "lightstage", False),
+    ("6", "Clear the full stage", "clear-lightstage", "lightstage", False),
+    ("7", "Set one light index across every arc", "set-horizontal-arc", "horizontal_arc", False),
+    ("8", "Clear one light index across every arc", "clear-horizontal-arc", "horizontal_arc", False),
+    ("9", "Set a polarized fixture", "set-polarized-light", "light", True),
+    ("10", "Clear a polarized fixture", "clear-polarized-light", "light", True),
+)
+# fmt: on
+
+_MODE_MENU: tuple[tuple[str, str, str, str | None], ...] = (
+    ("1", "Show current mode", "get-mode", None),
+    ("2", "Set Demo mode", "set-mode", "demo"),
+    ("3", "Set Manual mode", "set-mode", "manual"),
+    ("4", "Set OLAT mode", "set-mode", "olat"),
+    ("5", "Set Playback mode", "set-mode", "playback"),
+    ("6", "Trigger camera capture", "trigger", None),
+)
+
+
 class Terminal:
     """Small terminal renderer with an automatic plain-text fallback."""
 
@@ -111,18 +136,19 @@ class InteractiveSession:
 
     def run(self) -> str | None:
         """Run the menu and return a replacement URI when reconnecting."""
+        menu_items = [
+            ("1", "Fixtures and stage"),
+            ("2", "Modes and camera capture"),
+            ("3", "Playback sequences"),
+            ("4", "Inspect server"),
+            ("5", "Reconnect to another endpoint"),
+            ("q", "Quit"),
+        ]
         while True:
             self._begin_page("Choose an action below; q exits safely.")
             self.terminal.menu(
                 "Main menu",
-                [
-                    ("1", "Fixtures and stage"),
-                    ("2", "Modes and camera capture"),
-                    ("3", "Playback sequences"),
-                    ("4", "Inspect server"),
-                    ("5", "Reconnect to another endpoint"),
-                    ("q", "Quit"),
-                ],
+                menu_items,
             )
             choice = self._choice("Select", {"1", "2", "3", "4", "5", "q"})
             if choice is None or choice == "q":
@@ -143,42 +169,22 @@ class InteractiveSession:
                     return replacement
 
     def _fixtures(self) -> None:
-        actions = {
-            "1": ("set-light", "light", False),
-            "2": ("clear-light", "light", False),
-            "3": ("set-arc", "arc", False),
-            "4": ("clear-arc", "arc", False),
-            "5": ("set-lightstage", "lightstage", False),
-            "6": ("clear-lightstage", "lightstage", False),
-            "7": ("set-horizontal-arc", "horizontal_arc", False),
-            "8": ("clear-horizontal-arc", "horizontal_arc", False),
-            "9": ("set-polarized-light", "light", True),
-            "10": ("clear-polarized-light", "light", True),
-        }
+        actions = {key: (act, tgt, pol) for key, _, act, tgt, pol in _FIXTURE_MENU}
+        menu_items = [(key, label) for key, label, *_ in _FIXTURE_MENU] + [
+            ("b", "Back")
+        ]
+
         while True:
             self._begin_page()
             self.terminal.menu(
                 "Fixtures and stage",
-                [
-                    ("1", "Set one fixture"),
-                    ("2", "Clear one fixture"),
-                    ("3", "Set an arc"),
-                    ("4", "Clear an arc"),
-                    ("5", "Set the full stage"),
-                    ("6", "Clear the full stage"),
-                    ("7", "Set one light index across every arc"),
-                    ("8", "Clear one light index across every arc"),
-                    ("9", "Set a polarized fixture"),
-                    ("10", "Clear a polarized fixture"),
-                    ("b", "Back"),
-                ],
+                menu_items,
             )
             choice = self._choice("Select", {*actions, "b"})
-            if choice is None or choice == "b":
+            if choice in (None, "b"):
                 return
             action, target, polarized = actions[choice]
-            args = self._fixture_args(action, target, polarized)
-            if args is not None:
+            if (args := self._fixture_args(action, target, polarized)) is not None:
                 self._execute(args)
 
     def _fixture_args(
@@ -217,30 +223,14 @@ class InteractiveSession:
         return argparse.Namespace(**values)
 
     def _modes(self) -> None:
-        actions = {
-            "1": ("get-mode", None),
-            "2": ("set-mode", "demo"),
-            "3": ("set-mode", "manual"),
-            "4": ("set-mode", "olat"),
-            "5": ("set-mode", "playback"),
-            "6": ("trigger", None),
-        }
+        actions = {key: (act, mode) for key, _, act, mode in _MODE_MENU}
+        menu_items = [(key, label) for key, label, *_ in _MODE_MENU] + [("b", "Back")]
+
         while True:
             self._begin_page()
-            self.terminal.menu(
-                "Modes and camera capture",
-                [
-                    ("1", "Show current mode"),
-                    ("2", "Set Demo mode"),
-                    ("3", "Set Manual mode"),
-                    ("4", "Set OLAT mode"),
-                    ("5", "Set Playback mode"),
-                    ("6", "Trigger camera capture"),
-                    ("b", "Back"),
-                ],
-            )
+            self.terminal.menu("Modes and camera capture", menu_items)
             choice = self._choice("Select", {*actions, "b"})
-            if choice is None or choice == "b":
+            if choice in (None, "b"):
                 return
             action, mode = actions[choice]
             values: dict[str, Any] = {
@@ -263,20 +253,21 @@ class InteractiveSession:
             self._execute(argparse.Namespace(**values))
 
     def _sequences(self) -> None:
+        menu_items = [
+            ("1", "List sequences"),
+            ("2", "Show sequence metadata"),
+            ("3", "Upload a local .cbor or .cbor.zst file"),
+            ("4", "Delete a sequence"),
+            ("b", "Back"),
+        ]
         while True:
             self._begin_page()
             self.terminal.menu(
                 "Playback sequences",
-                [
-                    ("1", "List sequences"),
-                    ("2", "Show sequence metadata"),
-                    ("3", "Upload a local .cbor or .cbor.zst file"),
-                    ("4", "Delete a sequence"),
-                    ("b", "Back"),
-                ],
+                menu_items,
             )
             choice = self._choice("Select", {"1", "2", "3", "4", "b"})
-            if choice is None or choice == "b":
+            if choice in (None, "b"):
                 return
             if choice == "1":
                 self._execute(argparse.Namespace(action="list-sequences"))
@@ -310,19 +301,20 @@ class InteractiveSession:
                     self._pause()
 
     def _inspect(self) -> None:
+        menu_items = [
+            ("1", "Show configuration"),
+            ("2", "Show current mode"),
+            ("3", "List sequences"),
+            ("b", "Back"),
+        ]
         while True:
             self._begin_page()
             self.terminal.menu(
                 "Inspect server",
-                [
-                    ("1", "Show configuration"),
-                    ("2", "Show current mode"),
-                    ("3", "List sequences"),
-                    ("b", "Back"),
-                ],
+                menu_items,
             )
             choice = self._choice("Select", {"1", "2", "3", "b"})
-            if choice is None or choice == "b":
+            if choice in (None, "b"):
                 return
             action = {"1": "get-config", "2": "get-mode", "3": "list-sequences"}[choice]
             self._execute(argparse.Namespace(action=action))
