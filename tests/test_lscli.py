@@ -10,7 +10,7 @@ import pytest
 import websockets
 
 from pylightstage import StageMode
-from pylightstage.lsCLI import DEFAULT_URI, run
+from pylightstage.lscli import DEFAULT_URI, run
 
 
 pytestmark = pytest.mark.unit
