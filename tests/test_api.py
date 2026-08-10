@@ -56,8 +56,8 @@ async def test_set_mode_payloads():
     client._send_and_recv.reset_mock()
     await client.set_mode(
         {
-            "type": StageMode.OLAT,
-            "config": CaptureConfig(capture_hz=15.0),
+            "type": "OLAT",
+            "config": {"capture_hz": 15.0},
         }
     )
     assert client._send_and_recv.call_args[0][0] == {

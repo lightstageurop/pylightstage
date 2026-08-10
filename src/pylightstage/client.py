@@ -366,8 +366,11 @@ class LightStageClient:
         """
         Set the operation mode of the light stage.
 
+        If mode is provided as a dict, it is considered a complete, opaque, payload and sent as-is.
+        For known modes, the appropriate arguments should be provided.
+
         Args:
-            mode: Target mode
+            mode: Target mode (StageMode, string, or full payload dict)
             config: Required for 'OLAT' mode
             sequence_id: Required for 'PLAYBACK' mode
 
@@ -375,34 +378,46 @@ class LightStageClient:
             ValueError: If OLAT has no capture config or Playback has no sequence ID.
         """
         if isinstance(mode, dict):
-            payload = dict(mode)
-            if config is not None:
-                payload["config"] = config
-            if sequence_id is not None:
-                payload["id"] = str(sequence_id)
+            if config is not None or sequence_id is not None:
+                raise ValueError(
+                    "config and sequence_id must not be provided when mode is already the dict payload"
+                )
+            payload = mode
 
         else:
             mode_str = mode.value if isinstance(mode, StageMode) else mode
             payload: dict[str, Any] = {"type": mode_str}
 
-            if config is not None:
-                payload["config"] = config
-            if sequence_id is not None:
+            if mode_str == StageMode.OLAT.value:
+                if config is None:
+                    raise ValueError(
+                        "CaptureConfig is required when setting mode to 'OLAT'."
+                    )
+                if sequence_id is not None:
+                    raise ValueError(
+                        "sequence_id must not be provided when setting mode to 'OLAT'."
+                    )
+
+                payload["config"] = (
+                    asdict(config) if isinstance(config, CaptureConfig) else config
+                )
+
+            elif mode_str == StageMode.PLAYBACK.value:
+                if sequence_id is None:
+                    raise ValueError(
+                        "sequence_id is required when setting mode to 'PLAYBACK'."
+                    )
+                if config is not None:
+                    raise ValueError(
+                        "config must not be provided when setting mode to 'PLAYBACK'."
+                    )
+
                 payload["id"] = str(sequence_id)
 
-        mode_type = payload.get("type")
-        if isinstance(mode_type, StageMode):
-            mode_type = mode_type.value
-            payload["type"] = mode_type
-
-        capture_config = payload.get("config")
-        if isinstance(capture_config, CaptureConfig):
-            payload["config"] = asdict(capture_config)
-
-        if mode_type == StageMode.OLAT.value and "config" not in payload:
-            raise ValueError("CaptureConfig is required when setting mode to 'OLAT'.")
-        if mode_type == StageMode.PLAYBACK.value and not payload.get("id"):
-            raise ValueError("sequence_id is required when setting mode to 'PLAYBACK'.")
+            elif config is not None or sequence_id is not None:
+                raise ValueError(
+                    "config and sequence_id should only be provided for one of 'OLAT' or 'PLAYBACK' modes."
+                )
 
         cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
