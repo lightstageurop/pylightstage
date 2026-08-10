@@ -8,17 +8,17 @@ actions create a client, perform one operation, and close the connection.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, is_dataclass
-from enum import Enum
 import json
 import math
-from pathlib import Path
 import sys
-from typing import Any, Callable, Sequence, TextIO
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, is_dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Any, TextIO
 
 from ..client import LightStageSyncClient
 from ..models import PlaybackSequence, StageMode
-
 
 DEFAULT_URI = "ws://10.37.211.100:8080/ws"
 _COLOURS = ("rgb", "w", "rgbw")
@@ -27,14 +27,19 @@ _POLARIZATIONS = ("up", "cp", "pp")
 
 def _add_colour_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--color", choices=_COLOURS, default="rgbw",
+        "--color",
+        choices=_COLOURS,
+        default="rgbw",
         help="fixture channel to update (default: rgbw)",
     )
 
 
 def _add_intensity_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--intensity", nargs=3, type=float, metavar=("RED", "GREEN", "BLUE"),
+        "--intensity",
+        nargs=3,
+        type=float,
+        metavar=("RED", "GREEN", "BLUE"),
         default=(255.0, 255.0, 255.0),
         help="three 8-bit channel intensities, each from 0 to 255",
     )
@@ -96,11 +101,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Control a LightStage interactively or perform one atomic action.",
     )
     parser.add_argument(
-        "--uri", default=DEFAULT_URI,
+        "--uri",
+        default=DEFAULT_URI,
         help=f"LightStage WebSocket endpoint (default: {DEFAULT_URI})",
     )
     parser.add_argument(
-        "--connect-timeout", type=float, default=5.0, metavar="SECONDS",
+        "--connect-timeout",
+        type=float,
+        default=5.0,
+        metavar="SECONDS",
         help="maximum time to wait for the WebSocket connection (default: 5)",
     )
     parser.set_defaults(no_color=False)
@@ -110,11 +119,13 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("get-mode", help="print the current stage mode")
     commands.add_parser("trigger", help="trigger a capture in manual mode")
     interactive = commands.add_parser(
-        "interactive", aliases=["i"],
+        "interactive",
+        aliases=["i"],
         help="open a guided interactive terminal interface",
     )
     interactive.add_argument(
-        "--no-color", action="store_true",
+        "--no-color",
+        action="store_true",
         help="disable terminal colours and styling",
     )
 
@@ -128,33 +139,52 @@ def build_parser() -> argparse.ArgumentParser:
     _add_set_command(commands, "set-light", "set one fixture", target="light")
     _add_clear_command(commands, "clear-light", "turn off one fixture", target="light")
     _add_set_command(commands, "set-arc", "set all fixtures in one arc", target="arc")
-    _add_clear_command(commands, "clear-arc", "turn off all fixtures in one arc", target="arc")
-    _add_set_command(commands, "set-lightstage", "set every fixture", target="lightstage")
-    _add_clear_command(commands, "clear-lightstage", "turn off every fixture", target="lightstage")
+    _add_clear_command(
+        commands, "clear-arc", "turn off all fixtures in one arc", target="arc"
+    )
     _add_set_command(
-        commands, "set-horizontal-arc", "set one light index across all arcs",
+        commands, "set-lightstage", "set every fixture", target="lightstage"
+    )
+    _add_clear_command(
+        commands, "clear-lightstage", "turn off every fixture", target="lightstage"
+    )
+    _add_set_command(
+        commands,
+        "set-horizontal-arc",
+        "set one light index across all arcs",
         target="horizontal_arc",
     )
     _add_clear_command(
-        commands, "clear-horizontal-arc", "turn off one light index across all arcs",
+        commands,
+        "clear-horizontal-arc",
+        "turn off one light index across all arcs",
         target="horizontal_arc",
     )
     _add_set_command(
-        commands, "set-polarized-light", "set one polarized logical fixture",
-        target="light", polarized=True,
+        commands,
+        "set-polarized-light",
+        "set one polarized logical fixture",
+        target="light",
+        polarized=True,
     )
     _add_clear_command(
-        commands, "clear-polarized-light", "turn off one polarized logical fixture",
-        target="light", polarized=True,
+        commands,
+        "clear-polarized-light",
+        "turn off one polarized logical fixture",
+        target="light",
+        polarized=True,
     )
 
     commands.add_parser("list-sequences", help="list uploaded playback sequences")
     get_sequence = commands.add_parser("get-sequence", help="print sequence metadata")
     get_sequence.add_argument("sequence_id")
-    delete_sequence = commands.add_parser("delete-sequence", help="delete an uploaded sequence")
+    delete_sequence = commands.add_parser(
+        "delete-sequence", help="delete an uploaded sequence"
+    )
     delete_sequence.add_argument("sequence_id")
     upload_sequence = commands.add_parser(
-        "upload-sequence", help="upload a .cbor or .cbor.zst playback sequence",
+        "upload-sequence",
+        help="upload a .cbor or .cbor.zst playback sequence",
     )
     upload_sequence.add_argument("path", type=Path)
 
@@ -282,7 +312,10 @@ def run(
     with client_factory(uri=args.uri, connect_timeout=args.connect_timeout) as client:
         result = _dispatch(client, args)
     if result is not None:
-        print(json.dumps(result, default=_json_default, indent=2, sort_keys=True), file=output)
+        print(
+            json.dumps(result, default=_json_default, indent=2, sort_keys=True),
+            file=output,
+        )
     return 0
 
 

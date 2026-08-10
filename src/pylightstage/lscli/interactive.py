@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from pathlib import Path
 import sys
-from typing import Any, Callable, TextIO
-
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, TextIO
 
 Dispatch = Callable[[Any, argparse.Namespace], Any]
 JsonDefault = Callable[[Any], Any]
@@ -61,7 +61,7 @@ class Terminal:
         heading = self._style(f" {title} ", self._BOLD + self._CYAN)
         self.write(f"╔{heading}{'═' * max(0, width - len(title) - 4)}╗")
         for line in lines:
-            visible = line[:width - 4]
+            visible = line[: width - 4]
             self.write(f"║ {visible:<{width - 3}}║")
         self.write(f"╚{'═' * (width - 2)}╝")
 
@@ -113,14 +113,17 @@ class InteractiveSession:
         """Run the menu and return a replacement URI when reconnecting."""
         while True:
             self._begin_page("Choose an action below; q exits safely.")
-            self.terminal.menu("Main menu", [
-                ("1", "Fixtures and stage"),
-                ("2", "Modes and camera capture"),
-                ("3", "Playback sequences"),
-                ("4", "Inspect server"),
-                ("5", "Reconnect to another endpoint"),
-                ("q", "Quit"),
-            ])
+            self.terminal.menu(
+                "Main menu",
+                [
+                    ("1", "Fixtures and stage"),
+                    ("2", "Modes and camera capture"),
+                    ("3", "Playback sequences"),
+                    ("4", "Inspect server"),
+                    ("5", "Reconnect to another endpoint"),
+                    ("q", "Quit"),
+                ],
+            )
             choice = self._choice("Select", {"1", "2", "3", "4", "5", "q"})
             if choice is None or choice == "q":
                 self.terminal.success("Disconnected. Goodbye.")
@@ -154,15 +157,22 @@ class InteractiveSession:
         }
         while True:
             self._begin_page()
-            self.terminal.menu("Fixtures and stage", [
-                ("1", "Set one fixture"), ("2", "Clear one fixture"),
-                ("3", "Set an arc"), ("4", "Clear an arc"),
-                ("5", "Set the full stage"), ("6", "Clear the full stage"),
-                ("7", "Set one light index across every arc"),
-                ("8", "Clear one light index across every arc"),
-                ("9", "Set a polarized fixture"), ("10", "Clear a polarized fixture"),
-                ("b", "Back"),
-            ])
+            self.terminal.menu(
+                "Fixtures and stage",
+                [
+                    ("1", "Set one fixture"),
+                    ("2", "Clear one fixture"),
+                    ("3", "Set an arc"),
+                    ("4", "Clear an arc"),
+                    ("5", "Set the full stage"),
+                    ("6", "Clear the full stage"),
+                    ("7", "Set one light index across every arc"),
+                    ("8", "Clear one light index across every arc"),
+                    ("9", "Set a polarized fixture"),
+                    ("10", "Clear a polarized fixture"),
+                    ("b", "Back"),
+                ],
+            )
             choice = self._choice("Select", {*actions, "b"})
             if choice is None or choice == "b":
                 return
@@ -186,7 +196,9 @@ class InteractiveSession:
                 return None
             values["light"] = light
         if polarized:
-            pol = self._choice("Polarization [up/cp/pp]", {"up", "cp", "pp"}, default="up")
+            pol = self._choice(
+                "Polarization [up/cp/pp]", {"up", "cp", "pp"}, default="up"
+            )
             if pol is None:
                 return None
             values["polarization"] = pol
@@ -215,12 +227,18 @@ class InteractiveSession:
         }
         while True:
             self._begin_page()
-            self.terminal.menu("Modes and camera capture", [
-                ("1", "Show current mode"), ("2", "Set Demo mode"),
-                ("3", "Set Manual mode"), ("4", "Set OLAT mode"),
-                ("5", "Set Playback mode"), ("6", "Trigger camera capture"),
-                ("b", "Back"),
-            ])
+            self.terminal.menu(
+                "Modes and camera capture",
+                [
+                    ("1", "Show current mode"),
+                    ("2", "Set Demo mode"),
+                    ("3", "Set Manual mode"),
+                    ("4", "Set OLAT mode"),
+                    ("5", "Set Playback mode"),
+                    ("6", "Trigger camera capture"),
+                    ("b", "Back"),
+                ],
+            )
             choice = self._choice("Select", {*actions, "b"})
             if choice is None or choice == "b":
                 return
@@ -247,11 +265,16 @@ class InteractiveSession:
     def _sequences(self) -> None:
         while True:
             self._begin_page()
-            self.terminal.menu("Playback sequences", [
-                ("1", "List sequences"), ("2", "Show sequence metadata"),
-                ("3", "Upload a local .cbor or .cbor.zst file"),
-                ("4", "Delete a sequence"), ("b", "Back"),
-            ])
+            self.terminal.menu(
+                "Playback sequences",
+                [
+                    ("1", "List sequences"),
+                    ("2", "Show sequence metadata"),
+                    ("3", "Upload a local .cbor or .cbor.zst file"),
+                    ("4", "Delete a sequence"),
+                    ("b", "Back"),
+                ],
+            )
             choice = self._choice("Select", {"1", "2", "3", "4", "b"})
             if choice is None or choice == "b":
                 return
@@ -260,18 +283,28 @@ class InteractiveSession:
             elif choice == "2":
                 sequence_id = self._text("Sequence ID")
                 if sequence_id is not None:
-                    self._execute(argparse.Namespace(action="get-sequence", sequence_id=sequence_id))
+                    self._execute(
+                        argparse.Namespace(
+                            action="get-sequence", sequence_id=sequence_id
+                        )
+                    )
             elif choice == "3":
                 path = self._text("Path to sequence file")
                 if path is not None:
-                    self._execute(argparse.Namespace(action="upload-sequence", path=Path(path)))
+                    self._execute(
+                        argparse.Namespace(action="upload-sequence", path=Path(path))
+                    )
             else:
                 sequence_id = self._text("Sequence ID")
                 if sequence_id is None:
                     continue
                 confirmation = self._text("Type DELETE to confirm")
                 if confirmation == "DELETE":
-                    self._execute(argparse.Namespace(action="delete-sequence", sequence_id=sequence_id))
+                    self._execute(
+                        argparse.Namespace(
+                            action="delete-sequence", sequence_id=sequence_id
+                        )
+                    )
                 else:
                     self.terminal.warning("Delete cancelled.")
                     self._pause()
@@ -279,10 +312,15 @@ class InteractiveSession:
     def _inspect(self) -> None:
         while True:
             self._begin_page()
-            self.terminal.menu("Inspect server", [
-                ("1", "Show configuration"), ("2", "Show current mode"),
-                ("3", "List sequences"), ("b", "Back"),
-            ])
+            self.terminal.menu(
+                "Inspect server",
+                [
+                    ("1", "Show configuration"),
+                    ("2", "Show current mode"),
+                    ("3", "List sequences"),
+                    ("b", "Back"),
+                ],
+            )
             choice = self._choice("Select", {"1", "2", "3", "b"})
             if choice is None or choice == "b":
                 return
@@ -307,7 +345,11 @@ class InteractiveSession:
             else:
                 self.terminal.success("Action completed.")
             if result is not None:
-                self.terminal.write(json.dumps(result, default=self.json_default, indent=2, sort_keys=True))
+                self.terminal.write(
+                    json.dumps(
+                        result, default=self.json_default, indent=2, sort_keys=True
+                    )
+                )
         self._pause()
 
     def _text(self, label: str, *, default: str | None = None) -> str | None:
@@ -372,7 +414,9 @@ class InteractiveSession:
             if value is None:
                 return None
             try:
-                components = tuple(float(component) for component in value.replace(",", " ").split())
+                components = tuple(
+                    float(component) for component in value.replace(",", " ").split()
+                )
             except ValueError:
                 components = ()
             if len(components) == 3 and all(
@@ -380,7 +424,9 @@ class InteractiveSession:
                 for component in components
             ):
                 return (components[0], components[1], components[2])
-            self.terminal.warning("Enter three values from 0 to 255, for example: 255 0 0.")
+            self.terminal.warning(
+                "Enter three values from 0 to 255, for example: 255 0 0."
+            )
 
     def _pause(self) -> None:
         try:
@@ -413,8 +459,12 @@ def run_interactive(
                 uri=current_uri, connect_timeout=connect_timeout
             ) as client:
                 replacement = InteractiveSession(
-                    client, current_uri, dispatch=dispatch, json_default=json_default,
-                    terminal=terminal, input_func=input_func,
+                    client,
+                    current_uri,
+                    dispatch=dispatch,
+                    json_default=json_default,
+                    terminal=terminal,
+                    input_func=input_func,
                 ).run()
         except Exception as exc:
             terminal.clear()
