@@ -23,6 +23,7 @@ from .models import (
 from .utils import (
     color_mode,
     polarization_mode,
+    polarized_color,
     to_16b,
     unit_scale,
     validate_index,
@@ -33,8 +34,6 @@ logger = logging.getLogger("LightStageClient")
 
 
 class LightStageClient:
-    _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
-
     def __init__(
         self,
         uri: str = "ws://10.37.211.100:8080/ws",
@@ -274,17 +273,6 @@ class LightStageClient:
         for value in env_map:
             intensity = validate_intensity(value)
             yield tuple(channel * scale_value for channel in intensity)
-
-    @classmethod
-    def _polarized_color(cls, light: int, arc: int, pol: PolarizationMode) -> ColorMode:
-        pol = polarization_mode(pol)
-        if pol == "up":
-            return "rgbw"
-
-        uses_vertical_rgb = (arc % 2 == 0) == (light in cls._VERTICAL_RGB_LIGHTS)
-        if pol == "pp":
-            return "rgb" if uses_vertical_rgb else "w"
-        return "w" if uses_vertical_rgb else "rgb"
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
@@ -563,7 +551,7 @@ class LightStageClient:
         """Set one polarized logical fixture."""
         light = self._validate_light(light)
         arc = self._validate_arc(arc)
-        color = self._polarized_color(light, arc, pol)
+        color = polarized_color(light, arc, pol)
         await self.turn_on_light(light, arc, color, intensity, go)
 
     async def clear_pol_light(
@@ -606,9 +594,9 @@ class LightStageClient:
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
             light = i % self.lights_per_arc
             arc = i // self.lights_per_arc
-            polarized_color = self._polarized_color(light, arc, pol)
-            if color == "rgbw" or color == polarized_color:
-                await self.turn_on_light(light, arc, polarized_color, value, go=False)
+            fixture_color = polarized_color(light, arc, pol)
+            if color == "rgbw" or color == fixture_color:
+                await self.turn_on_light(light, arc, fixture_color, value, go=False)
         await self.go()
 
     async def set_horizontal_arc(

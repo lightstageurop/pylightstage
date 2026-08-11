@@ -262,6 +262,60 @@ def test_sequence_builder_set_lightstage_updates_all_arcs():
     ]
 
 
+@pytest.mark.parametrize(
+    ("arc", "light", "pol", "expected_channels"),
+    [
+        (0, 0, "up", {"rgb", "white"}),
+        (0, 0, "pp", {"rgb"}),
+        (0, 0, "cp", {"white"}),
+        (1, 0, "pp", {"white"}),
+        (0, 1, "pp", {"white"}),
+    ],
+)
+def test_sequence_builder_set_pol_light_selects_physical_channel(
+    arc, light, pol, expected_channels
+):
+    builder = SequenceBuilder(name="polarized", num_arcs=2, lights_per_arc=2)
+
+    returned = builder.set_pol_light(light, arc, pol=pol, intensity=(255.0, 0.0, 0.0))
+
+    active_channels = {
+        channel
+        for channel, value in (
+            ("rgb", builder._current_rgb[arc][light]),
+            ("white", builder._current_white[arc][light]),
+        )
+        if value != (0, 0, 0)
+    }
+    assert returned is builder
+    assert active_channels == expected_channels
+
+
+def test_sequence_builder_clear_pol_light_clears_selected_channel():
+    builder = SequenceBuilder(name="polarized-clear", num_arcs=1, lights_per_arc=1)
+    builder.set_pol_light(0, 0, pol="pp", intensity=(255.0, 0.0, 0.0))
+
+    returned = builder.turn_off_pol_light(0, 0, pol="pp")
+
+    assert returned is builder
+    assert builder._current_rgb[0][0] == (0, 0, 0)
+
+
+def test_sequence_builder_horizontal_arc_updates_and_clears_every_arc():
+    builder = SequenceBuilder(name="horizontal", num_arcs=3, lights_per_arc=2)
+
+    returned = builder.turn_on_horizontal_arc(
+        1, color="rgb", intensity=(0.0, 255.0, 0.0)
+    )
+
+    assert returned is builder
+    assert [arc[1] for arc in builder._current_rgb] == [(0, 65535, 0)] * 3
+    assert [arc[0] for arc in builder._current_rgb] == [(0, 0, 0)] * 3
+
+    builder.turn_off_horizontal_arc(1, color="rgb")
+    assert [arc[1] for arc in builder._current_rgb] == [(0, 0, 0)] * 3
+
+
 def test_sequence_builder_append_frame_snapshots_current_state():
     builder = SequenceBuilder(name="snapshot", num_arcs=1, lights_per_arc=1)
     builder.set_light(0, 0, color="rgb", intensity=(255.0, 0.0, 0.0))

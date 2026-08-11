@@ -9,7 +9,13 @@ from .models import (
     PolarizationMode,
     StageFrame,
 )
-from .utils import color_mode, to_16b, validate_index, validate_intensity
+from .utils import (
+    color_mode,
+    polarized_color,
+    to_16b,
+    validate_index,
+    validate_intensity,
+)
 
 
 class SequenceBuilder:
@@ -137,7 +143,11 @@ class SequenceBuilder:
         pol: PolarizationMode = "up",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
-        raise NotImplementedError()
+        """Set one polarized logical fixture for the current frame."""
+        arc = self._validate_arc(arc)
+        light = self._validate_light(light)
+        color = polarized_color(light, arc, pol)
+        return self.set_light(light, arc, color, intensity)
 
     def clear_pol_light(
         self,
@@ -154,19 +164,21 @@ class SequenceBuilder:
     def set_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = "rgbw",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
-        raise NotImplementedError()
+        """Set the same light index across all arcs for the current frame."""
+        light = self._validate_light(light)
+        for arc in range(self.num_arcs):
+            self.set_light(light, arc, color, intensity)
+        return self
 
     def clear_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = "rgbw",
     ) -> Self:
-        return self.set_horizontal_arc(light, arc, color, (0, 0, 0))
+        return self.set_horizontal_arc(light, color, (0, 0, 0))
 
     turn_on_horizontal_arc = set_horizontal_arc
     turn_off_horizontal_arc = clear_horizontal_arc
