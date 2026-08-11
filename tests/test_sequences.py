@@ -184,6 +184,12 @@ def test_sequence_builder_build_returns_playback_sequence():
     assert len(sequence.frames) == 1
 
 
+@pytest.mark.parametrize("capture_hz", [0.0, -1.0, float("nan"), float("inf")])
+def test_sequence_builder_rejects_invalid_capture_rate(capture_hz):
+    with pytest.raises(ValueError, match="positive finite"):
+        SequenceBuilder(name="invalid", capture_hz=capture_hz)
+
+
 def test_sequence_builder_set_light_updates_rgb_and_white_for_rgbw():
     builder = SequenceBuilder(name="rgbw", num_arcs=1, lights_per_arc=1)
 

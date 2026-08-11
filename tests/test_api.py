@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pylightstage import LightStageClient, StageMode
+from pylightstage import CaptureConfig, LightStageClient, StageMode
 
 pytestmark = pytest.mark.unit
 
@@ -46,6 +46,50 @@ async def test_set_mode_payloads():
     assert client._send_and_recv.call_args[0][0] == {
         "SetMode": {"type": "OLAT", "config": {"capture_hz": 25.0}}
     }
+
+    client._send_and_recv.reset_mock()
+    await client.set_mode_playback("01PLAYBACK")
+    assert client._send_and_recv.call_args[0][0] == {
+        "SetMode": {"type": "Playback", "id": "01PLAYBACK"}
+    }
+
+    client._send_and_recv.reset_mock()
+    await client.set_mode(
+        {
+            "type": "OLAT",
+            "config": {"capture_hz": 15.0},
+        }
+    )
+    assert client._send_and_recv.call_args[0][0] == {
+        "SetMode": {"type": "OLAT", "config": {"capture_hz": 15.0}}
+    }
+
+
+async def test_camera_trigger_and_sequence_requests_match_server_protocol():
+    client = LightStageClient()
+    client._send_and_recv = AsyncMock(return_value=None)
+
+    await client.trigger()
+    client._send_and_recv.assert_awaited_once_with("ManualTrigger")
+
+    client._send_and_recv.reset_mock()
+    await client.list_sequences()
+    client._send_and_recv.assert_awaited_once_with("ListSequences")
+
+    client._send_and_recv.reset_mock()
+    await client.get_sequence("01PLAYBACK")
+    client._send_and_recv.assert_awaited_once_with({"GetSequence": "01PLAYBACK"})
+
+    client._send_and_recv.reset_mock()
+    await client.delete_sequence("01PLAYBACK")
+    client._send_and_recv.assert_awaited_once_with({"DeleteSequence": "01PLAYBACK"})
+
+    client._send_and_recv.reset_mock()
+    sequence = {"name": "demo", "capture_hz": 30.0, "frames": []}
+    await client.upload_sequence(sequence)
+    client._send_and_recv.assert_awaited_once_with(
+        {"UploadSequence": sequence}, timeout=60.0
+    )
 
 
 async def test_turn_on_light_immediate():

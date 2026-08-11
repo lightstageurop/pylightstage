@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import logging
+import math
 import threading
 from collections.abc import Callable
 from dataclasses import asdict
@@ -34,9 +35,16 @@ logger = logging.getLogger("LightStageClient")
 class LightStageClient:
     _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
 
-    def __init__(self, uri: str = "ws://10.37.211.100:8080/ws"):
+    def __init__(
+        self,
+        uri: str = "ws://10.37.211.100:8080/ws",
+        connect_timeout: float = 5.0,
+    ):
         """Initialise the Light Stage Client."""
+        if not math.isfinite(connect_timeout) or connect_timeout <= 0.0:
+            raise ValueError("connect_timeout must be a positive finite number")
         self._uri = uri
+        self._connect_timeout = connect_timeout
         self._websocket = None
         self._req_id = 0
 
@@ -59,12 +67,15 @@ class LightStageClient:
         if self._websocket is not None:
             return  # already connected
 
-        self._websocket = await websockets.connect(self._uri)
+        self._websocket = await asyncio.wait_for(
+            websockets.connect(self._uri), timeout=self._connect_timeout
+        )
         self._disconnected_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver())
 
     async def close(self):
         """Safely close WebSocket connection."""
+        websocket = self._websocket
         if self._receiver_task:
             self._receiver_task.cancel()
             try:
@@ -73,9 +84,9 @@ class LightStageClient:
                 pass
             self._receiver_task = None
 
-        if self._websocket:
-            await self._websocket.close()
-            self._websocket = None
+        if websocket:
+            await websocket.close()
+        self._websocket = None
 
         self._disconnected_event.set()
         self._fail_pending_requests(RuntimeError("Connection closed by client"))
@@ -355,38 +366,58 @@ class LightStageClient:
         """
         Set the operation mode of the light stage.
 
+        If mode is provided as a dict, it is considered a complete, opaque, payload and sent as-is.
+        For known modes, the appropriate arguments should be provided.
+
         Args:
-            mode: Target mode
+            mode: Target mode (StageMode, string, or full payload dict)
             config: Required for 'OLAT' mode
             sequence_id: Required for 'PLAYBACK' mode
 
         Raises:
-            ValueError: If no config provided for OLAT or Playback modes
+            ValueError: If OLAT has no capture config or Playback has no sequence ID.
         """
         if isinstance(mode, dict):
+            if config is not None or sequence_id is not None:
+                raise ValueError(
+                    "config and sequence_id must not be provided when mode is already the dict payload"
+                )
             payload = mode
 
         else:
             mode_str = mode.value if isinstance(mode, StageMode) else mode
             payload: dict[str, Any] = {"type": mode_str}
 
-            if mode_str == "OLAT":
+            if mode_str == StageMode.OLAT.value:
                 if config is None:
                     raise ValueError(
                         "CaptureConfig is required when setting mode to 'OLAT'."
+                    )
+                if sequence_id is not None:
+                    raise ValueError(
+                        "sequence_id must not be provided when setting mode to 'OLAT'."
                     )
 
                 payload["config"] = (
                     asdict(config) if isinstance(config, CaptureConfig) else config
                 )
 
-            elif mode_str == "Playback":
+            elif mode_str == StageMode.PLAYBACK.value:
                 if sequence_id is None:
                     raise ValueError(
                         "sequence_id is required when setting mode to 'PLAYBACK'."
                     )
+                if config is not None:
+                    raise ValueError(
+                        "config must not be provided when setting mode to 'PLAYBACK'."
+                    )
 
-                payload["id"] = sequence_id
+                payload["id"] = str(sequence_id)
+
+            elif config is not None or sequence_id is not None:
+                raise ValueError(
+                    "config and sequence_id should only be provided for one of 'OLAT' or 'PLAYBACK' modes."
+                )
 
         cmd = {"SetMode": payload}
         return await self._send_and_recv(cmd)
@@ -402,10 +433,9 @@ class LightStageClient:
             StageMode.OLAT, config=CaptureConfig(capture_hz=capture_hz)
         )
 
-    async def set_mode_playback(self, capture_hz: float):
-        return await self.set_mode(
-            StageMode.PLAYBACK, config=CaptureConfig(capture_hz=capture_hz)
-        )
+    async def set_mode_playback(self, sequence_id: str):
+        """Start a playback sequence previously uploaded to the server."""
+        return await self.set_mode(StageMode.PLAYBACK, sequence_id=sequence_id)
 
     # Manual mode API
 
@@ -648,7 +678,13 @@ class LightStageSyncClient:
     # with LightStageSyncClient() as client:
     #     client.turn_on_light(...)
     def __enter__(self):
-        self._run(self._client.connect())
+        try:
+            self._run(self._client.connect())
+        except BaseException:
+            # If connecting fails, `with` never calls __exit__.  Stop the
+            # background event-loop thread here so failed CLI attempts exit.
+            self.close()
+            raise
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

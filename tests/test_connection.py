@@ -55,3 +55,15 @@ async def test_wait_until_disconnected_event():
     # Should resolve quickly without timing out
     await asyncio.wait_for(close_task, timeout=1.0)
     assert client._disconnected_event.is_set()
+
+
+async def test_connect_uses_the_configured_timeout():
+    async def never_connect(_uri):
+        await asyncio.sleep(60)
+
+    with patch("pylightstage.client.websockets.connect", new=never_connect):
+        client = LightStageClient("ws://unreachable", connect_timeout=0.01)
+        with pytest.raises(TimeoutError):
+            await client.connect()
+
+    assert not client.is_connected
