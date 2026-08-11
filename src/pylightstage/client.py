@@ -685,10 +685,40 @@ class LightStageSyncClient:
 
     def _run(self, coro):
         """Allows running an async coroutine from the synchronous thread."""
-        if self._loop is None:
+        if self._loop is None or self._loop.is_closed():
+            coro.close()
             raise RuntimeError("Synchronous client event loop is not running.")
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        if threading.current_thread() is self._thread:
+            coro.close()
+            raise RuntimeError(
+                "Cannot call a synchronous client method from its event-loop thread."
+            )
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except BaseException:
+            coro.close()
+            raise
         return future.result()  # block until coroutine returns
+
+    def on_event(self, fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        """Register a callback without blocking the client's event-loop thread.
+
+        Synchronous callbacks run in a worker thread and may safely call this
+        client. Async callbacks run on the client loop and must remain async.
+        """
+
+        @functools.wraps(fn)
+        async def callback(event: Any):
+            if inspect.iscoroutinefunction(fn):
+                await fn(event)
+                return
+
+            result = await asyncio.to_thread(fn, event)
+            if inspect.isawaitable(result):
+                await result
+
+        self._client.on_event(callback)
+        return fn
 
     def close(self):
         if not self._thread.is_alive():
