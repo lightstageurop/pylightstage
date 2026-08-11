@@ -61,6 +61,7 @@ class LightStageClient:
         # Local buffer for fixture updates (used when go=False).
         # (arc_idx, light_idx) -> UpdateColourRequest
         self._pending_updates: dict[tuple[int, int], dict[str, Any]] = {}
+        self._go_lock = asyncio.Lock()
 
     async def connect(self):
         """Establish WebSocket connection to light stage server."""
@@ -276,15 +277,31 @@ class LightStageClient:
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
-        if not self._pending_updates:
-            return
+        async with self._go_lock:
+            if not self._pending_updates:
+                return
 
-        fixtures = [
-            {"arc_idx": arc, "light_idx": light, "colour": colour_req}
-            for (arc, light), colour_req in self._pending_updates.items()
-        ]
-        await self._send_and_recv({"SetFixtures": fixtures})
-        self._pending_updates.clear()
+            # Move the current batch out of the shared buffer before awaiting
+            # the server. Updates queued while this request is in flight must
+            # remain in the new buffer for the next call to go().
+            updates = self._pending_updates
+            self._pending_updates = {}
+            fixtures = [
+                {"arc_idx": arc, "light_idx": light, "colour": colour_req}
+                for (arc, light), colour_req in updates.items()
+            ]
+            try:
+                await self._send_and_recv({"SetFixtures": fixtures})
+            except BaseException:
+                # Retain the failed batch for retry, but let newer values win
+                # when both batches update the same channel of one fixture.
+                for key, colour_req in updates.items():
+                    newer_req = self._pending_updates.get(key)
+                    if newer_req is None:
+                        self._pending_updates[key] = colour_req
+                    else:
+                        self._pending_updates[key] = {**colour_req, **newer_req}
+                raise
 
     # Playback API
 
