@@ -356,3 +356,61 @@ def test_sequence_builder_set_light_rejects_invalid_light():
 
     with pytest.raises(IndexError, match="light index"):
         builder.set_light(1, 0)
+
+
+def test_sequence_builder_from_empty_frame_uses_editable_default_dimensions():
+    sequence = PlaybackSequence(name="empty", capture_hz=30.0, frames=[StageFrame()])
+
+    builder = SequenceBuilder.from_sequence(sequence)
+    builder.set_light(13, 11, color="rgb", intensity=(255.0, 0.0, 0.0))
+
+    assert builder.num_arcs == 12
+    assert builder.lights_per_arc == 14
+    assert builder._current_rgb[11][13] == (65535, 0, 0)
+    assert builder._current_white[11][13] == (0, 0, 0)
+
+
+def test_sequence_builder_from_rgb_only_frame_infers_and_fills_dimensions():
+    sequence = PlaybackSequence(
+        name="rgb-only",
+        capture_hz=30.0,
+        frames=[
+            StageFrame(),
+            StageFrame(rgb_fixtures=[[(1, 2, 3), (4, 5, 6)]]),
+        ],
+    )
+
+    builder = SequenceBuilder.from_sequence(sequence)
+    builder.set_light(1, 0, color="w", intensity=(255.0, 0.0, 0.0))
+
+    assert builder.num_arcs == 1
+    assert builder.lights_per_arc == 2
+    assert builder._current_rgb == [[(1, 2, 3), (4, 5, 6)]]
+    assert builder._current_white == [[(0, 0, 0), (65535, 0, 0)]]
+
+
+def test_sequence_builder_from_sequence_rejects_inconsistent_grid_dimensions():
+    sequence = PlaybackSequence(
+        name="inconsistent",
+        capture_hz=30.0,
+        frames=[
+            StageFrame(
+                white_fixtures=[[(1, 2, 3)]],
+                rgb_fixtures=[[(1, 2, 3), (4, 5, 6)]],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="same dimensions"):
+        SequenceBuilder.from_sequence(sequence)
+
+
+def test_sequence_builder_from_sequence_rejects_ragged_grid():
+    sequence = PlaybackSequence(
+        name="ragged",
+        capture_hz=30.0,
+        frames=[StageFrame(rgb_fixtures=[[(1, 2, 3)], [(4, 5, 6), (7, 8, 9)]])],
+    )
+
+    with pytest.raises(ValueError, match="equally sized, non-empty rows"):
+        SequenceBuilder.from_sequence(sequence)

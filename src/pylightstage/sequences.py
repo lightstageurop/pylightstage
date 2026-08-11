@@ -218,12 +218,33 @@ class SequenceBuilder:
         Existing frames are copied into the builder, further edits will be appended to the sequence.
         Modifying existing frames is not yet supported.
         """
-        num_arcs = 12
-        lights_per_arc = 14
-        if sequence.frames:
-            # infer dimensions from previous sequence, should they differ
-            num_arcs = len(sequence.frames[0].white_fixtures)
-            lights_per_arc = len(sequence.frames[0].white_fixtures[0])
+        dimensions: tuple[int, int] | None = None
+        for frame_index, frame in enumerate(sequence.frames):
+            for channel, grid in (
+                ("white", frame.white_fixtures),
+                ("rgb", frame.rgb_fixtures),
+            ):
+                if not grid:
+                    continue
+
+                row_lengths = {len(row) for row in grid}
+                if len(row_lengths) != 1 or 0 in row_lengths:
+                    raise ValueError(
+                        f"frame {frame_index} {channel} fixture grid must have "
+                        "equally sized, non-empty rows"
+                    )
+
+                grid_dimensions = (len(grid), row_lengths.pop())
+                if dimensions is None:
+                    dimensions = grid_dimensions
+                elif grid_dimensions != dimensions:
+                    raise ValueError(
+                        "all non-empty fixture grids must have the same "
+                        f"dimensions; expected {dimensions}, got "
+                        f"{grid_dimensions} for frame {frame_index} {channel}"
+                    )
+
+        num_arcs, lights_per_arc = dimensions or (12, 14)
 
         builder = cls(
             name=sequence.name,
@@ -237,7 +258,16 @@ class SequenceBuilder:
         if sequence.frames:
             last = sequence.frames[-1]
             if not auto_clear:
-                builder._current_white = copy.deepcopy(last.white_fixtures)
-                builder._current_rgb = copy.deepcopy(last.rgb_fixtures)
+
+                def current_grid(grid):
+                    if grid:
+                        return copy.deepcopy(grid)
+                    return [
+                        [(0, 0, 0) for _ in range(lights_per_arc)]
+                        for _ in range(num_arcs)
+                    ]
+
+                builder._current_white = current_grid(last.white_fixtures)
+                builder._current_rgb = current_grid(last.rgb_fixtures)
 
         return builder
