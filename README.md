@@ -17,23 +17,31 @@ Install the package from PyPI:
 python -m pip install pylightstage
 ```
 
-Or from git:
+Or from source:
 
 ```bash
 git clone https://github.com/lightstageurop/pylightstage.git
-python3 -m pip install .
+cd pylightstage
+python -m pip install .
 ```
 
-For development documentation, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
-See [examples/](examples/) for how to use the library.
+The hardware consists of 12 arcs (0-11), each containing 14 lights (0-13).
+
+Intensities are 3-element tuples like `(r, g, b)` or `(warm, neutral, cool)` with values ranging 0-255.
+
+Fixture updates can set color fixtures only (`"rgb"`), white only (`"w"`), or both together (`"rgbw"`).
+
+For more information on the hardare, see the [wiki][wiki].
 
 Basic usage might look like this:
 
 ```py
 import asyncio
+from pylightstage import LightStageClient
 
 URI = "ws://10.37.211.100:8080/ws"
 
@@ -48,11 +56,11 @@ if __name__ == "__main__":
 > [!NOTE]
 > The historical default endpoint is `ws://10.37.211.100:8080/ws`; replace it with your installation's endpoint.
 
+See [examples/](examples/) for further usage.
+
 ### Command-line interface (`lscli`)
 
-The normal `lscli` commands are atomic: each invocation connects, performs one operation, then closes.
-
-Once installed, run `lscli`, or the module entry point:
+Once the package is installed, run `lscli`, or the module entry point:
 
 ```bash
 lscli --help
@@ -65,9 +73,11 @@ For all commands you can specify a full websocket uri with `--uri`, before the c
 lscli [--uri=ws://lightstage.example:8080/ws] {command}
 ```
 
-Omitting `--uri` will default to `ws://10.37.211.100:8080/ws`.
+Where omitting `--uri` will default to `ws://10.37.211.100:8080/ws`.
 
-With no action, `lscli` launches the visual interactive console.
+The regular `lscli` commands are atomic: each invocation connects, performs one operation, then closes.
+
+However, with no action, or with the interactive command, `lscli` launches the visual interactive console.
 
 ```bash
 lscli [--uri=...]
@@ -77,6 +87,9 @@ lscli [--uri=...] interactive
 The interactive console uses colour and clears the previous page when standard
 output is a terminal. Enter `b` at a prompt to cancel or return to the preceding
 menu, and `q` from the main menu to close the connection and exit.
+
+<details>
+<summary>Further commands and usage</summary>
 
 ```bash
 # Inspect state. Returned data is JSON on standard output.
@@ -128,8 +141,11 @@ Set commands default to `--color rgbw --intensity 255 255 255`; clear commands d
 
 The CLI exits non-zero for invalid arguments, unreadable sequence files, connection failures, or server errors. Commands with no returned data are silent on success.
 
+</details>
+
 ## License
 
 Distributed under the [MIT License](LICENSE).
 
 [lsserver]: https://github.com/lightstageurop/lightstage-server-rs/tree/master/lsserver
+[wiki]: https://github.com/lightstageurop/lightstage-server-rs/wiki
