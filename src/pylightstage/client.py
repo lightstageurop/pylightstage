@@ -77,20 +77,24 @@ class LightStageClient:
     async def close(self):
         """Safely close WebSocket connection."""
         websocket = self._websocket
-        if self._receiver_task:
-            self._receiver_task.cancel()
+        receiver_task = self._receiver_task
+        try:
+            if receiver_task:
+                receiver_task.cancel()
+                try:
+                    await receiver_task
+                except asyncio.CancelledError:
+                    pass
+        finally:
             try:
-                await self._receiver_task
-            except asyncio.CancelledError:
-                pass
-            self._receiver_task = None
-
-        if websocket:
-            await websocket.close()
-        self._websocket = None
-
-        self._disconnected_event.set()
-        self._fail_pending_requests(RuntimeError("Connection closed by client"))
+                if websocket:
+                    await websocket.close()
+            finally:
+                self._receiver_task = None
+                if self._websocket is websocket:
+                    self._websocket = None
+                self._disconnected_event.set()
+                self._fail_pending_requests(RuntimeError("Connection closed by client"))
 
     @property
     def is_connected(self) -> bool:
@@ -175,20 +179,20 @@ class LightStageClient:
 
     async def _send_and_recv(self, cmd: Any, timeout: float = 5.0) -> Any:
         """Helper to send CBOR message and listen for response."""
-        if not self._websocket:
+        websocket = self._websocket
+        if not websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         req_id = self._next_id()
         fut = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = fut
 
-        payload = {
-            "id": req_id,
-            "command": cmd,
-        }
-        await self._websocket.send(cbor2.dumps(payload))
-
         try:
+            payload = {
+                "id": req_id,
+                "command": cmd,
+            }
+            await websocket.send(cbor2.dumps(payload))
             resp = await asyncio.wait_for(fut, timeout=timeout)
             return self._unwrap_response(resp)
         except TimeoutError:
@@ -197,6 +201,13 @@ class LightStageClient:
             )
         finally:
             self._pending_requests.pop(req_id, None)
+            if not fut.done():
+                fut.cancel()
+            elif not fut.cancelled():
+                # A receiver failure may race with a send failure. Retrieve any
+                # stored exception so the abandoned future cannot emit an
+                # "exception was never retrieved" warning.
+                fut.exception()
 
     @staticmethod
     def _unwrap_response(resp: Any) -> Any:

@@ -67,3 +67,34 @@ async def test_connect_uses_the_configured_timeout():
             await client.connect()
 
     assert not client.is_connected
+
+
+async def test_send_failure_removes_pending_request():
+    client = LightStageClient()
+    websocket = AsyncMock()
+    websocket.send.side_effect = OSError("send failed")
+    client._websocket = websocket
+
+    with pytest.raises(OSError, match="send failed"):
+        await client._send_and_recv("GetConfig")
+
+    assert client._pending_requests == {}
+
+
+async def test_close_failure_still_marks_client_disconnected():
+    client = LightStageClient()
+    websocket = AsyncMock()
+    websocket.close.side_effect = OSError("close failed")
+    client._websocket = websocket
+    pending = asyncio.get_running_loop().create_future()
+    client._pending_requests[1] = pending
+
+    with pytest.raises(OSError, match="close failed"):
+        await client.close()
+
+    assert not client.is_connected
+    assert client._receiver_task is None
+    assert client._disconnected_event.is_set()
+    assert client._pending_requests == {}
+    with pytest.raises(RuntimeError, match="Connection closed by client"):
+        await pending
