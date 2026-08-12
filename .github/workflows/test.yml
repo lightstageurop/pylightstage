@@ -30,7 +30,9 @@ jobs:
         run: python -m pip install --upgrade pip
 
       - name: Install package and test dependencies
-        run: python -m pip install -e .[dev]
+        run: |
+          python -m pip install -e .
+          python -m pip install --group dev
 
       - name: Run pytest with coverage
         run: pytest --cov=pylightstage --cov-report=term-missing
