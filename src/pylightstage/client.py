@@ -36,7 +36,7 @@ logger = logging.getLogger("LightStageClient")
 class LightStageClient:
     def __init__(
         self,
-        uri: str = "ws://10.37.211.100:8080/ws",
+        uri: str = "ws://172.30.40.238:8080/ws",
         connect_timeout: float = 5.0,
     ):
         """Initialise the Light Stage Client."""
