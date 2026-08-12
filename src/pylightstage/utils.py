@@ -4,6 +4,8 @@ from collections.abc import Iterable
 
 from .models import ColorMode, FixtureIntensity, FixtureValue, PolarizationMode
 
+_VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
+
 
 def as_index(name: str, value: int) -> int:
     if isinstance(value, bool):
@@ -31,6 +33,18 @@ def polarization_mode(pol: str) -> PolarizationMode:
     if pol not in ("up", "cp", "pp"):
         raise ValueError("pol (polarization) value is not one of 'up', 'cp', 'pp'")
     return pol  # type: ignore[return-value]
+
+
+def polarized_color(light: int, arc: int, pol: PolarizationMode) -> ColorMode:
+    """Select the physical channel for a polarized logical fixture."""
+    pol = polarization_mode(pol)
+    if pol == "up":
+        return "rgbw"
+
+    uses_vertical_rgb = (arc % 2 == 0) == (light in _VERTICAL_RGB_LIGHTS)
+    if pol == "pp":
+        return "rgb" if uses_vertical_rgb else "w"
+    return "w" if uses_vertical_rgb else "rgb"
 
 
 def unit_scale(value: float) -> float:

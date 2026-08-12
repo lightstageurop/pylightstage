@@ -7,6 +7,7 @@ and shut down safely without hanging the main thread.
 """
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -71,10 +72,70 @@ def test_sync_client_stops_its_background_thread_when_connection_fails():
         await asyncio.sleep(60)
 
     with patch("pylightstage.client.websockets.connect", new=never_connect):
-        sync_client = LightStageSyncClient(
-            "ws://unreachable", connect_timeout=0.01
-        )
+        sync_client = LightStageSyncClient("ws://unreachable", connect_timeout=0.01)
         with pytest.raises(TimeoutError):
             sync_client.__enter__()
 
     assert not sync_client._thread.is_alive()
+
+
+def test_sync_event_callback_can_call_client_method_without_deadlocking():
+    sync_client = LightStageSyncClient()
+    callback_done = threading.Event()
+    callback_results = []
+    callback_threads = []
+    sync_client._client._send_and_recv = AsyncMock(return_value={"arcs": 12})
+
+    try:
+
+        @sync_client.on_event
+        def handle_event(_event):
+            callback_threads.append(threading.current_thread())
+            callback_results.append(sync_client.get_config())
+            callback_done.set()
+
+        registered_callback = sync_client._client._event_callbacks[-1]
+        sync_client._loop.call_soon_threadsafe(
+            sync_client._client._dispatch_callback,
+            registered_callback,
+            "ConfigChanged",
+        )
+
+        assert callback_done.wait(timeout=1.0)
+        assert callback_results == [{"arcs": 12}]
+        assert len(callback_threads) == 1
+        assert callback_threads[0] is not sync_client._thread
+    finally:
+        sync_client.close()
+
+
+def test_sync_client_rejects_blocking_call_from_async_event_callback():
+    sync_client = LightStageSyncClient()
+    callback_done = threading.Event()
+    callback_errors = []
+    sync_client._client._send_and_recv = AsyncMock(return_value={"arcs": 12})
+
+    try:
+
+        @sync_client.on_event
+        async def handle_event(_event):
+            try:
+                sync_client.get_config()
+            except RuntimeError as exc:
+                callback_errors.append(str(exc))
+            finally:
+                callback_done.set()
+
+        registered_callback = sync_client._client._event_callbacks[-1]
+        sync_client._loop.call_soon_threadsafe(
+            sync_client._client._dispatch_callback,
+            registered_callback,
+            "ConfigChanged",
+        )
+
+        assert callback_done.wait(timeout=1.0)
+        assert callback_errors == [
+            "Cannot call a synchronous client method from its event-loop thread."
+        ]
+    finally:
+        sync_client.close()

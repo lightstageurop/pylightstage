@@ -9,7 +9,13 @@ from .models import (
     PolarizationMode,
     StageFrame,
 )
-from .utils import color_mode, to_16b, validate_index, validate_intensity
+from .utils import (
+    color_mode,
+    polarized_color,
+    to_16b,
+    validate_index,
+    validate_intensity,
+)
 
 
 class SequenceBuilder:
@@ -137,7 +143,11 @@ class SequenceBuilder:
         pol: PolarizationMode = "up",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
-        raise NotImplementedError()
+        """Set one polarized logical fixture for the current frame."""
+        arc = self._validate_arc(arc)
+        light = self._validate_light(light)
+        color = polarized_color(light, arc, pol)
+        return self.set_light(light, arc, color, intensity)
 
     def clear_pol_light(
         self,
@@ -154,19 +164,21 @@ class SequenceBuilder:
     def set_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = "rgbw",
         intensity: FixtureIntensity = (255.0, 255.0, 255.0),
     ) -> Self:
-        raise NotImplementedError()
+        """Set the same light index across all arcs for the current frame."""
+        light = self._validate_light(light)
+        for arc in range(self.num_arcs):
+            self.set_light(light, arc, color, intensity)
+        return self
 
     def clear_horizontal_arc(
         self,
         light: int,
-        arc: int,
         color: ColorMode = "rgbw",
     ) -> Self:
-        return self.set_horizontal_arc(light, arc, color, (0, 0, 0))
+        return self.set_horizontal_arc(light, color, (0, 0, 0))
 
     turn_on_horizontal_arc = set_horizontal_arc
     turn_off_horizontal_arc = clear_horizontal_arc
@@ -206,12 +218,33 @@ class SequenceBuilder:
         Existing frames are copied into the builder, further edits will be appended to the sequence.
         Modifying existing frames is not yet supported.
         """
-        num_arcs = 12
-        lights_per_arc = 14
-        if sequence.frames:
-            # infer dimensions from previous sequence, should they differ
-            num_arcs = len(sequence.frames[0].white_fixtures)
-            lights_per_arc = len(sequence.frames[0].white_fixtures[0])
+        dimensions: tuple[int, int] | None = None
+        for frame_index, frame in enumerate(sequence.frames):
+            for channel, grid in (
+                ("white", frame.white_fixtures),
+                ("rgb", frame.rgb_fixtures),
+            ):
+                if not grid:
+                    continue
+
+                row_lengths = {len(row) for row in grid}
+                if len(row_lengths) != 1 or 0 in row_lengths:
+                    raise ValueError(
+                        f"frame {frame_index} {channel} fixture grid must have "
+                        "equally sized, non-empty rows"
+                    )
+
+                grid_dimensions = (len(grid), row_lengths.pop())
+                if dimensions is None:
+                    dimensions = grid_dimensions
+                elif grid_dimensions != dimensions:
+                    raise ValueError(
+                        "all non-empty fixture grids must have the same "
+                        f"dimensions; expected {dimensions}, got "
+                        f"{grid_dimensions} for frame {frame_index} {channel}"
+                    )
+
+        num_arcs, lights_per_arc = dimensions or (12, 14)
 
         builder = cls(
             name=sequence.name,
@@ -225,7 +258,16 @@ class SequenceBuilder:
         if sequence.frames:
             last = sequence.frames[-1]
             if not auto_clear:
-                builder._current_white = copy.deepcopy(last.white_fixtures)
-                builder._current_rgb = copy.deepcopy(last.rgb_fixtures)
+
+                def current_grid(grid):
+                    if grid:
+                        return copy.deepcopy(grid)
+                    return [
+                        [(0, 0, 0) for _ in range(lights_per_arc)]
+                        for _ in range(num_arcs)
+                    ]
+
+                builder._current_white = current_grid(last.white_fixtures)
+                builder._current_rgb = current_grid(last.rgb_fixtures)
 
         return builder

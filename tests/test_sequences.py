@@ -262,6 +262,60 @@ def test_sequence_builder_set_lightstage_updates_all_arcs():
     ]
 
 
+@pytest.mark.parametrize(
+    ("arc", "light", "pol", "expected_channels"),
+    [
+        (0, 0, "up", {"rgb", "white"}),
+        (0, 0, "pp", {"rgb"}),
+        (0, 0, "cp", {"white"}),
+        (1, 0, "pp", {"white"}),
+        (0, 1, "pp", {"white"}),
+    ],
+)
+def test_sequence_builder_set_pol_light_selects_physical_channel(
+    arc, light, pol, expected_channels
+):
+    builder = SequenceBuilder(name="polarized", num_arcs=2, lights_per_arc=2)
+
+    returned = builder.set_pol_light(light, arc, pol=pol, intensity=(255.0, 0.0, 0.0))
+
+    active_channels = {
+        channel
+        for channel, value in (
+            ("rgb", builder._current_rgb[arc][light]),
+            ("white", builder._current_white[arc][light]),
+        )
+        if value != (0, 0, 0)
+    }
+    assert returned is builder
+    assert active_channels == expected_channels
+
+
+def test_sequence_builder_clear_pol_light_clears_selected_channel():
+    builder = SequenceBuilder(name="polarized-clear", num_arcs=1, lights_per_arc=1)
+    builder.set_pol_light(0, 0, pol="pp", intensity=(255.0, 0.0, 0.0))
+
+    returned = builder.turn_off_pol_light(0, 0, pol="pp")
+
+    assert returned is builder
+    assert builder._current_rgb[0][0] == (0, 0, 0)
+
+
+def test_sequence_builder_horizontal_arc_updates_and_clears_every_arc():
+    builder = SequenceBuilder(name="horizontal", num_arcs=3, lights_per_arc=2)
+
+    returned = builder.turn_on_horizontal_arc(
+        1, color="rgb", intensity=(0.0, 255.0, 0.0)
+    )
+
+    assert returned is builder
+    assert [arc[1] for arc in builder._current_rgb] == [(0, 65535, 0)] * 3
+    assert [arc[0] for arc in builder._current_rgb] == [(0, 0, 0)] * 3
+
+    builder.turn_off_horizontal_arc(1, color="rgb")
+    assert [arc[1] for arc in builder._current_rgb] == [(0, 0, 0)] * 3
+
+
 def test_sequence_builder_append_frame_snapshots_current_state():
     builder = SequenceBuilder(name="snapshot", num_arcs=1, lights_per_arc=1)
     builder.set_light(0, 0, color="rgb", intensity=(255.0, 0.0, 0.0))
@@ -302,3 +356,61 @@ def test_sequence_builder_set_light_rejects_invalid_light():
 
     with pytest.raises(IndexError, match="light index"):
         builder.set_light(1, 0)
+
+
+def test_sequence_builder_from_empty_frame_uses_editable_default_dimensions():
+    sequence = PlaybackSequence(name="empty", capture_hz=30.0, frames=[StageFrame()])
+
+    builder = SequenceBuilder.from_sequence(sequence)
+    builder.set_light(13, 11, color="rgb", intensity=(255.0, 0.0, 0.0))
+
+    assert builder.num_arcs == 12
+    assert builder.lights_per_arc == 14
+    assert builder._current_rgb[11][13] == (65535, 0, 0)
+    assert builder._current_white[11][13] == (0, 0, 0)
+
+
+def test_sequence_builder_from_rgb_only_frame_infers_and_fills_dimensions():
+    sequence = PlaybackSequence(
+        name="rgb-only",
+        capture_hz=30.0,
+        frames=[
+            StageFrame(),
+            StageFrame(rgb_fixtures=[[(1, 2, 3), (4, 5, 6)]]),
+        ],
+    )
+
+    builder = SequenceBuilder.from_sequence(sequence)
+    builder.set_light(1, 0, color="w", intensity=(255.0, 0.0, 0.0))
+
+    assert builder.num_arcs == 1
+    assert builder.lights_per_arc == 2
+    assert builder._current_rgb == [[(1, 2, 3), (4, 5, 6)]]
+    assert builder._current_white == [[(0, 0, 0), (65535, 0, 0)]]
+
+
+def test_sequence_builder_from_sequence_rejects_inconsistent_grid_dimensions():
+    sequence = PlaybackSequence(
+        name="inconsistent",
+        capture_hz=30.0,
+        frames=[
+            StageFrame(
+                white_fixtures=[[(1, 2, 3)]],
+                rgb_fixtures=[[(1, 2, 3), (4, 5, 6)]],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="same dimensions"):
+        SequenceBuilder.from_sequence(sequence)
+
+
+def test_sequence_builder_from_sequence_rejects_ragged_grid():
+    sequence = PlaybackSequence(
+        name="ragged",
+        capture_hz=30.0,
+        frames=[StageFrame(rgb_fixtures=[[(1, 2, 3)], [(4, 5, 6), (7, 8, 9)]])],
+    )
+
+    with pytest.raises(ValueError, match="equally sized, non-empty rows"):
+        SequenceBuilder.from_sequence(sequence)

@@ -23,6 +23,7 @@ from .models import (
 from .utils import (
     color_mode,
     polarization_mode,
+    polarized_color,
     to_16b,
     unit_scale,
     validate_index,
@@ -33,8 +34,6 @@ logger = logging.getLogger("LightStageClient")
 
 
 class LightStageClient:
-    _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
-
     def __init__(
         self,
         uri: str = "ws://10.37.211.100:8080/ws",
@@ -61,6 +60,7 @@ class LightStageClient:
         # Local buffer for fixture updates (used when go=False).
         # (arc_idx, light_idx) -> UpdateColourRequest
         self._pending_updates: dict[tuple[int, int], dict[str, Any]] = {}
+        self._go_lock = asyncio.Lock()
 
     async def connect(self):
         """Establish WebSocket connection to light stage server."""
@@ -76,20 +76,24 @@ class LightStageClient:
     async def close(self):
         """Safely close WebSocket connection."""
         websocket = self._websocket
-        if self._receiver_task:
-            self._receiver_task.cancel()
+        receiver_task = self._receiver_task
+        try:
+            if receiver_task:
+                receiver_task.cancel()
+                try:
+                    await receiver_task
+                except asyncio.CancelledError:
+                    pass
+        finally:
             try:
-                await self._receiver_task
-            except asyncio.CancelledError:
-                pass
-            self._receiver_task = None
-
-        if websocket:
-            await websocket.close()
-        self._websocket = None
-
-        self._disconnected_event.set()
-        self._fail_pending_requests(RuntimeError("Connection closed by client"))
+                if websocket:
+                    await websocket.close()
+            finally:
+                self._receiver_task = None
+                if self._websocket is websocket:
+                    self._websocket = None
+                self._disconnected_event.set()
+                self._fail_pending_requests(RuntimeError("Connection closed by client"))
 
     @property
     def is_connected(self) -> bool:
@@ -174,20 +178,20 @@ class LightStageClient:
 
     async def _send_and_recv(self, cmd: Any, timeout: float = 5.0) -> Any:
         """Helper to send CBOR message and listen for response."""
-        if not self._websocket:
+        websocket = self._websocket
+        if not websocket:
             raise RuntimeError("Not connected to WebSocket server.")
 
         req_id = self._next_id()
         fut = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = fut
 
-        payload = {
-            "id": req_id,
-            "command": cmd,
-        }
-        await self._websocket.send(cbor2.dumps(payload))
-
         try:
+            payload = {
+                "id": req_id,
+                "command": cmd,
+            }
+            await websocket.send(cbor2.dumps(payload))
             resp = await asyncio.wait_for(fut, timeout=timeout)
             return self._unwrap_response(resp)
         except TimeoutError:
@@ -196,6 +200,13 @@ class LightStageClient:
             )
         finally:
             self._pending_requests.pop(req_id, None)
+            if not fut.done():
+                fut.cancel()
+            elif not fut.cancelled():
+                # A receiver failure may race with a send failure. Retrieve any
+                # stored exception so the abandoned future cannot emit an
+                # "exception was never retrieved" warning.
+                fut.exception()
 
     @staticmethod
     def _unwrap_response(resp: Any) -> Any:
@@ -263,28 +274,33 @@ class LightStageClient:
             intensity = validate_intensity(value)
             yield tuple(channel * scale_value for channel in intensity)
 
-    @classmethod
-    def _polarized_color(cls, light: int, arc: int, pol: PolarizationMode) -> ColorMode:
-        pol = polarization_mode(pol)
-        if pol == "up":
-            return "rgbw"
-
-        uses_vertical_rgb = (arc % 2 == 0) == (light in cls._VERTICAL_RGB_LIGHTS)
-        if pol == "pp":
-            return "rgb" if uses_vertical_rgb else "w"
-        return "w" if uses_vertical_rgb else "rgb"
-
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
-        if not self._pending_updates:
-            return
+        async with self._go_lock:
+            if not self._pending_updates:
+                return
 
-        fixtures = [
-            {"arc_idx": arc, "light_idx": light, "colour": colour_req}
-            for (arc, light), colour_req in self._pending_updates.items()
-        ]
-        await self._send_and_recv({"SetFixtures": fixtures})
-        self._pending_updates.clear()
+            # Move the current batch out of the shared buffer before awaiting
+            # the server. Updates queued while this request is in flight must
+            # remain in the new buffer for the next call to go().
+            updates = self._pending_updates
+            self._pending_updates = {}
+            fixtures = [
+                {"arc_idx": arc, "light_idx": light, "colour": colour_req}
+                for (arc, light), colour_req in updates.items()
+            ]
+            try:
+                await self._send_and_recv({"SetFixtures": fixtures})
+            except BaseException:
+                # Retain the failed batch for retry, but let newer values win
+                # when both batches update the same channel of one fixture.
+                for key, colour_req in updates.items():
+                    newer_req = self._pending_updates.get(key)
+                    if newer_req is None:
+                        self._pending_updates[key] = colour_req
+                    else:
+                        self._pending_updates[key] = {**colour_req, **newer_req}
+                raise
 
     # Playback API
 
@@ -535,7 +551,7 @@ class LightStageClient:
         """Set one polarized logical fixture."""
         light = self._validate_light(light)
         arc = self._validate_arc(arc)
-        color = self._polarized_color(light, arc, pol)
+        color = polarized_color(light, arc, pol)
         await self.turn_on_light(light, arc, color, intensity, go)
 
     async def clear_pol_light(
@@ -578,9 +594,9 @@ class LightStageClient:
         for i, value in enumerate(self._iter_env_map_values(env_map, scale)):
             light = i % self.lights_per_arc
             arc = i // self.lights_per_arc
-            polarized_color = self._polarized_color(light, arc, pol)
-            if color == "rgbw" or color == polarized_color:
-                await self.turn_on_light(light, arc, polarized_color, value, go=False)
+            fixture_color = polarized_color(light, arc, pol)
+            if color == "rgbw" or color == fixture_color:
+                await self.turn_on_light(light, arc, fixture_color, value, go=False)
         await self.go()
 
     async def set_horizontal_arc(
@@ -657,10 +673,40 @@ class LightStageSyncClient:
 
     def _run(self, coro):
         """Allows running an async coroutine from the synchronous thread."""
-        if self._loop is None:
+        if self._loop is None or self._loop.is_closed():
+            coro.close()
             raise RuntimeError("Synchronous client event loop is not running.")
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        if threading.current_thread() is self._thread:
+            coro.close()
+            raise RuntimeError(
+                "Cannot call a synchronous client method from its event-loop thread."
+            )
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except BaseException:
+            coro.close()
+            raise
         return future.result()  # block until coroutine returns
+
+    def on_event(self, fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        """Register a callback without blocking the client's event-loop thread.
+
+        Synchronous callbacks run in a worker thread and may safely call this
+        client. Async callbacks run on the client loop and must remain async.
+        """
+
+        @functools.wraps(fn)
+        async def callback(event: Any):
+            if inspect.iscoroutinefunction(fn):
+                await fn(event)
+                return
+
+            result = await asyncio.to_thread(fn, event)
+            if inspect.isawaitable(result):
+                await result
+
+        self._client.on_event(callback)
+        return fn
 
     def close(self):
         if not self._thread.is_alive():

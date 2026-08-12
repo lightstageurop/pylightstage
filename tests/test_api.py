@@ -7,6 +7,7 @@ dictionary payloads and correctly manages batched state, isolating the logic
 from the network layer.
 """
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -145,6 +146,85 @@ async def test_batching_updates_with_go():
     cmd = client._send_and_recv.call_args[0][0]
     assert "SetFixtures" in cmd
     assert len(cmd["SetFixtures"]) == 2
+
+
+async def test_go_preserves_updates_queued_while_batch_is_in_flight():
+    client = LightStageClient()
+    send_started = asyncio.Event()
+    allow_response = asyncio.Event()
+
+    async def delayed_send(_command):
+        send_started.set()
+        await allow_response.wait()
+
+    client._send_and_recv = AsyncMock(side_effect=delayed_send)
+    await client.set_light(0, 0, color="rgb", intensity=(1, 0, 0), go=False)
+
+    go_task = asyncio.create_task(client.go())
+    await send_started.wait()
+    await client.set_light(1, 0, color="rgb", intensity=(2, 0, 0), go=False)
+    allow_response.set()
+    await go_task
+
+    assert list(client._pending_updates) == [(0, 1)]
+
+
+async def test_concurrent_go_calls_send_batches_in_order():
+    client = LightStageClient()
+    first_send_started = asyncio.Event()
+    allow_first_response = asyncio.Event()
+    sent_commands = []
+
+    async def ordered_send(command):
+        sent_commands.append(command)
+        if len(sent_commands) == 1:
+            first_send_started.set()
+            await allow_first_response.wait()
+
+    client._send_and_recv = AsyncMock(side_effect=ordered_send)
+    await client.set_light(0, 0, color="rgb", intensity=(1, 0, 0), go=False)
+    first_go = asyncio.create_task(client.go())
+    await first_send_started.wait()
+
+    await client.set_light(1, 0, color="rgb", intensity=(2, 0, 0), go=False)
+    second_go = asyncio.create_task(client.go())
+    await asyncio.sleep(0)
+    assert len(sent_commands) == 1
+
+    allow_first_response.set()
+    await asyncio.gather(first_go, second_go)
+
+    assert [command["SetFixtures"][0]["light_idx"] for command in sent_commands] == [
+        0,
+        1,
+    ]
+
+
+async def test_go_restores_failed_batch_without_overwriting_newer_channels():
+    client = LightStageClient()
+    send_started = asyncio.Event()
+    allow_failure = asyncio.Event()
+
+    async def failing_send(_command):
+        send_started.set()
+        await allow_failure.wait()
+        raise RuntimeError("server rejected batch")
+
+    client._send_and_recv = AsyncMock(side_effect=failing_send)
+    await client.set_light(0, 0, color="rgb", intensity=(1, 0, 0), go=False)
+
+    go_task = asyncio.create_task(client.go())
+    await send_started.wait()
+    await client.set_light(0, 0, color="w", intensity=(0, 2, 0), go=False)
+    allow_failure.set()
+
+    with pytest.raises(RuntimeError, match="server rejected batch"):
+        await go_task
+
+    assert client._pending_updates[(0, 0)] == {
+        "rgb": (257, 0, 0),
+        "white": (0, 514, 0),
+    }
 
 
 async def test_arc_and_lightstage_commands():
