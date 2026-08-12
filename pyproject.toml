@@ -40,3 +40,9 @@
   minversion = "6.0"
   pythonpath = ["src"]
   testpaths = ["tests"]
+
+[tool.basedpyright]
+  include = ["src"]
+
+[tool.ruff.lint]
+  extend-select = ["I"]
