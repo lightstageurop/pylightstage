@@ -26,11 +26,14 @@ jobs:
       - name: Install Ruff
         run: uv sync --group dev
 
-      - name: Run Ruff
+      - name: Ruff check
+        if: ${{ !cancelled() }}
         run: uv run ruff check .
 
-      - name: Run Ruff
+      - name: Ruff format
+        if: ${{ !cancelled() }}
         run: uv run ruff format --check .
 
       - name: Run Basedpyright
+        if: ${{ !cancelled() }}
         run: uv run basedpyright
