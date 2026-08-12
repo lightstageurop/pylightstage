@@ -17,7 +17,8 @@ python3 -m venv .venv
 . .venv/bin/activate    # On Windows: .venv\Scripts\activate
 
 # Install with dev dependencies (eg. pytest)
-pip install -e ".[dev]"
+pip install -e .
+pip install --group dev
 
 # Run default unit tests
 pytest
@@ -36,7 +37,7 @@ lscli --uri=ws://127.0.0.1:8080/ws
 
 ```shell
 # Install project with dev dependencies
-uv sync --extra dev
+uv sync
 
 # prefix commands with 'uv run'
 uv run pytest
