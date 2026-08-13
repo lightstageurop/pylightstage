@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from pylightstage import CaptureConfig, LightStageClient, StageMode
+from pylightstage import LightStageClient, StageMode
 
 pytestmark = pytest.mark.unit
 

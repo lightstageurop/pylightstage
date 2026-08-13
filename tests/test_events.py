@@ -25,9 +25,7 @@ async def test_wait_for_server_events(event_name, event_payload):
     """Test the event shapes serialized by the Rust server."""
     client = LightStageClient()
 
-    wait_task = asyncio.create_task(
-        client.wait_for_event(event_name, timeout=1.0)
-    )
+    wait_task = asyncio.create_task(client.wait_for_event(event_name, timeout=1.0))
 
     # Yield briefly so wait_task can register its callback
     await asyncio.sleep(0.01)

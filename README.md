@@ -45,9 +45,11 @@ from pylightstage import LightStageClient
 
 URI = "ws://172.30.40.238:8080/ws"
 
+
 async def main():
     async with LightStageClient(uri=URI) as client:
         await client.turn_on_lightstage(color="rgbw", intensity=(255.0, 0.0, 0.0))
+
 
 if __name__ == "__main__":
     asyncio.run(main())
