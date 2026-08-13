@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -17,7 +17,7 @@ ColorMode = Literal["rgb", "w", "rgbw"]
 PolarizationMode = Literal["up", "cp", "pp"]
 
 
-class StageMode(Enum):
+class StageMode(StrEnum):
     """Light stage operation modes."""
 
     DEMO = "Demo"
@@ -121,7 +121,7 @@ class PlaybackSequence:
     def from_cbor(cls, payload: bytes) -> "PlaybackSequence":
         data = cbor2.loads(payload)
         if not isinstance(data, dict):
-            raise ValueError("Invalid CBOR payload for PlaybackSequence")
+            raise ValueError("Invalid CBOR payload for PlaybackSequence")  # noqa: TRY004
         return cls.from_dict(data)
 
     def save(self, path: str | Path) -> None:

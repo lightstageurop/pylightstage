@@ -30,7 +30,7 @@ from .utils import (
     validate_intensity,
 )
 
-logger = logging.getLogger("LightStageClient")
+logger = logging.getLogger(__name__)
 
 
 class LightStageClient:
@@ -142,12 +142,12 @@ class LightStageClient:
         except asyncio.CancelledError:
             pass
         except websockets.ConnectionClosed as exc:
-            logging.warning(f"WebSocket connection closed unexpectedly: {exc}")
+            logger.warning("WebSocket connection closed unexpectedly: %s", exc)
             self._fail_pending_requests(
                 RuntimeError(f"WebSocket connection lost: {exc}")
             )
         except Exception as exc:
-            logger.error(f"Unexpected error in receiver loop: {exc}")
+            logger.exception("Unexpected error in receiver loop")
             # fail waiting futures
             self._fail_pending_requests(exc)
         finally:
@@ -160,9 +160,9 @@ class LightStageClient:
                 asyncio.create_task(callback(event))
             else:
                 callback(event)
-        except Exception as exc:
+        except Exception:
             # if user code crashes, we don't care
-            logger.error(f"Error in event callback: {exc}")
+            logger.exception("Error in event callback")
 
     def _fail_pending_requests(self, exc: Exception):
         for fut in list(self._pending_requests.values()):
