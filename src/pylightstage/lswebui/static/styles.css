@@ -5,11 +5,7 @@
   font-synthesis: none;
   --line: #243138;
   --line-soft: #1c282e;
-  --panel: #10171b;
-  --panel-high: #141d22;
-  --muted: #7f929b;
   --teal: #57dfcd;
-  --teal-dim: #254f4a;
 }
 
 * { box-sizing: border-box; }
@@ -317,26 +313,6 @@ h3 { font-size: 0.78rem; font-weight: 650; letter-spacing: 0.02em; }
 .fixture-glyph { position: relative; display: flex; flex: 0 0 2.35rem; height: 2.35rem; align-items: center; justify-content: center; gap: 0.2rem; border-radius: 50%; background: #101b1f; }
 .fixture-glyph i { width: 0.62rem; height: 0.9rem; border: 1px solid #67968f; border-radius: 50%; background: #18322f; }
 .fixture-glyph i:last-child { border-color: #887e69; background: #302a20; }
-
-.orientation-card { display: grid; grid-template-columns: 2.7rem 1fr; align-items: center; gap: 0.7rem; margin-bottom: 0.45rem; padding: 0.65rem; border: 1px solid #223137; border-radius: 0.42rem; background: #0b1215; }
-.orientation-card strong, .orientation-card small { display: block; }
-.orientation-card strong { color: #aebdc1; font-size: 0.66rem; font-weight: 570; }
-.orientation-card small { margin-top: 0.18rem; color: #5f7279; font-size: 0.54rem; }
-.pair-diagram { display: flex; width: 2.7rem; height: 2rem; align-items: center; justify-content: center; gap: 0.18rem; }
-.pair-diagram i { width: 0.62rem; height: 0.82rem; border: 1px solid #54736f; border-radius: 50%; background: #142321; box-shadow: inset -0.15rem 0 0 #0b1215; }
-.vertical-pair { flex-direction: column; gap: 0.08rem; }
-.vertical-pair i { width: 0.82rem; height: 0.62rem; }
-
-.scene-data { margin: 0; }
-.scene-data div { display: flex; justify-content: space-between; padding: 0.6rem 0; border-bottom: 1px solid #1d292e; font-size: 0.62rem; }
-.scene-data dt { color: #63757c; }
-.scene-data dd { margin: 0; color: #9cabb0; font: 0.59rem/1 ui-monospace, monospace; }
-.legend { margin: 0.9rem; padding: 0.8rem; border: 1px solid #25343a; border-radius: 0.48rem; background: #0a1114; }
-.legend > div { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; margin-top: 0.55rem; color: #a2b1b5; font-size: 0.62rem; }
-.legend small { color: #596b72; font-size: 0.55rem; }
-.legend-dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; }
-.rgb-dot { background: #66cec8; box-shadow: 0 0 0.5rem #4ea9a6; }
-.white-dot { background: #f0ddbb; box-shadow: 0 0 0.5rem #a89371; }
 
 .fixture-control { display: flex; min-height: 0; flex-direction: column; }
 .fixture-control fieldset { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; margin: 0; padding: 0; border: 0; }

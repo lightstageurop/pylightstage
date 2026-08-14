@@ -1,3 +1,5 @@
+import { lookAt, multiply, perspective, resizeCanvas } from "../math.js";
+
 const SHADER = /* wgsl */ `
 struct Camera {
   viewProjection: mat4x4<f32>,
@@ -71,56 +73,6 @@ function cylinderVertices(segments = 18, radius = 0.052, halfDepth = 0.026) {
     values.push(0, 0, -halfDepth, 0, 0, -1, ...b, -halfDepth, 0, 0, -1, ...a, -halfDepth, 0, 0, -1);
   }
   return new Float32Array(values);
-}
-
-function perspective(fov, aspect, near, far) {
-  const f = 1 / Math.tan(fov / 2);
-  const range = 1 / (near - far);
-  return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, far * range, -1,
-    0, 0, near * far * range, 0,
-  ]);
-}
-
-function lookAt(eye, target, up) {
-  const normalize = ([x, y, z]) => {
-    const length = Math.hypot(x, y, z) || 1;
-    return [x / length, y / length, z / length];
-  };
-  const z = normalize([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
-  const x = normalize([
-    up[1] * z[2] - up[2] * z[1],
-    up[2] * z[0] - up[0] * z[2],
-    up[0] * z[1] - up[1] * z[0],
-  ]);
-  const y = [
-    z[1] * x[2] - z[2] * x[1],
-    z[2] * x[0] - z[0] * x[2],
-    z[0] * x[1] - z[1] * x[0],
-  ];
-  return new Float32Array([
-    x[0], y[0], z[0], 0,
-    x[1], y[1], z[1], 0,
-    x[2], y[2], z[2], 0,
-    -(x[0] * eye[0] + x[1] * eye[1] + x[2] * eye[2]),
-    -(y[0] * eye[0] + y[1] * eye[1] + y[2] * eye[2]),
-    -(z[0] * eye[0] + z[1] * eye[1] + z[2] * eye[2]),
-    1,
-  ]);
-}
-
-function multiply(a, b) {
-  const out = new Float32Array(16);
-  for (let column = 0; column < 4; column += 1) {
-    for (let row = 0; row < 4; row += 1) {
-      let value = 0;
-      for (let index = 0; index < 4; index += 1) value += a[index * 4 + row] * b[column * 4 + index];
-      out[column * 4 + row] = value;
-    }
-  }
-  return out;
 }
 
 export class WebGPURenderer {
@@ -200,18 +152,11 @@ export class WebGPURenderer {
   }
 
   resize() {
-    const scale = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.floor(this.canvas.clientWidth * scale));
-    const height = Math.max(1, Math.floor(this.canvas.clientHeight * scale));
-    const sizeChanged = this.canvas.width !== width || this.canvas.height !== height;
+    const sizeChanged = resizeCanvas(this.canvas);
     if (!sizeChanged && this.depthTexture) return;
-    if (sizeChanged) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-    }
     this.depthTexture?.destroy();
     this.depthTexture = this.device.createTexture({
-      size: [width, height],
+      size: [this.canvas.width, this.canvas.height],
       format: "depth24plus",
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });

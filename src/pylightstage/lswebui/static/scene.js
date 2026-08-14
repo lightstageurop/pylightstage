@@ -1,13 +1,20 @@
 const VERTICAL_RGB_LIGHTS = new Set([0, 2, 4, 6, 7, 9, 11, 13]);
-
 const RGB_OFF = [0.035, 0.065, 0.07];
 const WHITE_OFF = [0.07, 0.068, 0.06];
+const PHYSICAL_PER_FIXTURE = 2;
+const INSTANCE_STRIDE = 16;
+const COLOUR_OFFSET = 12;
+const ALPHA_OFFSET = 15;
+
+function rgbIsVertical(arc, light) {
+  return (arc % 2 === 0) === VERTICAL_RGB_LIGHTS.has(light);
+}
 
 export function polarizedChannel(arc, light, polarization) {
   if (polarization === "up") return "rgbw";
-  const rgbIsVertical = (arc % 2 === 0) === VERTICAL_RGB_LIGHTS.has(light);
-  if (polarization === "pp") return rgbIsVertical ? "rgb" : "white";
-  return rgbIsVertical ? "white" : "rgb";
+  const vertical = rgbIsVertical(arc, light);
+  if (polarization === "pp") return vertical ? "rgb" : "white";
+  return vertical ? "white" : "rgb";
 }
 
 /** Renderer-neutral state for the paired physical fixtures in a 12-by-14 LightStage. */
@@ -16,9 +23,9 @@ export class StageScene {
     this.arcs = arcs;
     this.lightsPerArc = lightsPerArc;
     this.logicalCount = arcs * lightsPerArc;
-    this.physicalPerFixture = 2;
+    this.physicalPerFixture = PHYSICAL_PER_FIXTURE;
     this.count = this.logicalCount * this.physicalPerFixture;
-    this.instanceStride = 16;
+    this.instanceStride = INSTANCE_STRIDE;
     // position + padding, horizontal tangent + padding, vertical tangent + padding, colour.rgba
     this.instanceData = new Float32Array(this.count * this.instanceStride);
     this.fixtures = [];
@@ -48,10 +55,8 @@ export class StageScene {
           Math.cos(elevation),
           -Math.sin(elevation) * Math.sin(azimuth),
         ];
-        // This mirrors pylightstage.utils._VERTICAL_RGB_LIGHTS and polarized_color().
-        const rgbIsVertical = (arc % 2 === 0) === VERTICAL_RGB_LIGHTS.has(light);
-        const pairAxis = rgbIsVertical ? vertical : horizontal;
-        const orientation = rgbIsVertical ? "vertical" : "horizontal";
+        const verticalRgb = rgbIsVertical(arc, light);
+        const pairAxis = verticalRgb ? vertical : horizontal;
 
         this.#writePhysicalFixture(
           logicalIndex * 2,
@@ -74,8 +79,8 @@ export class StageScene {
         this.fixtures.push({
           arc,
           light,
-          orientation,
-          rgbIsVertical,
+          orientation: verticalRgb ? "vertical" : "horizontal",
+          rgbIsVertical: verticalRgb,
           intensity: { rgb: [0, 0, 0], white: [0, 0, 0] },
         });
       }
@@ -84,23 +89,28 @@ export class StageScene {
   }
 
   #writePhysicalFixture(index, centre, pairAxis, displacement, horizontal, vertical, colour) {
-    const offset = index * this.instanceStride;
+    const offset = index * INSTANCE_STRIDE;
     for (let axis = 0; axis < 3; axis += 1) {
       this.instanceData[offset + axis] = centre[axis] + pairAxis[axis] * displacement;
       this.instanceData[offset + 4 + axis] = horizontal[axis];
       this.instanceData[offset + 8 + axis] = vertical[axis];
-      this.instanceData[offset + 12 + axis] = colour[axis];
+      this.instanceData[offset + COLOUR_OFFSET + axis] = colour[axis];
     }
-    this.instanceData[offset + 15] = 1;
+    this.instanceData[offset + ALPHA_OFFSET] = 1;
+  }
+
+  #setAlpha(logicalIndex, channel, alpha) {
+    const channelOffset = channel === "white" ? 1 : 0;
+    const physicalIndex = logicalIndex * PHYSICAL_PER_FIXTURE + channelOffset;
+    this.instanceData[physicalIndex * INSTANCE_STRIDE + ALPHA_OFFSET] = alpha;
   }
 
   setLayerVisibility(channel, visible) {
     if (!(channel in this.visibility)) throw new RangeError(`Unknown fixture layer: ${channel}`);
     this.visibility[channel] = Boolean(visible);
     for (let logicalIndex = 0; logicalIndex < this.logicalCount; logicalIndex += 1) {
-      const physicalIndex = logicalIndex * 2 + (channel === "white" ? 1 : 0);
       const selected = logicalIndex === this.selectedLogicalIndex;
-      this.instanceData[physicalIndex * this.instanceStride + 15] = visible ? (selected ? 2 : 1) : 0;
+      this.#setAlpha(logicalIndex, channel, visible ? (selected ? 2 : 1) : 0);
     }
     this.version += 1;
   }
@@ -112,14 +122,19 @@ export class StageScene {
     if (channel !== "rgb" && channel !== "white") {
       throw new RangeError(`Unknown physical fixture channel: ${channel}`);
     }
-    const physicalIndex = (arc * this.lightsPerArc + light) * 2 + (channel === "white" ? 1 : 0);
-    const offset = physicalIndex * this.instanceStride + 12;
-    this.instanceData[offset] = colour[0];
-    this.instanceData[offset + 1] = colour[1];
-    this.instanceData[offset + 2] = colour[2];
     const logicalIndex = arc * this.lightsPerArc + light;
+    const channelOffset = channel === "white" ? 1 : 0;
+    const physicalIndex = logicalIndex * PHYSICAL_PER_FIXTURE + channelOffset;
+    const offset = physicalIndex * INSTANCE_STRIDE + COLOUR_OFFSET;
+    colour.slice(0, 3).forEach((value, index) => {
+      this.instanceData[offset + index] = value;
+    });
     const selected = logicalIndex === this.selectedLogicalIndex;
-    this.instanceData[offset + 3] = this.visibility[channel] ? (selected ? 2 : (colour[3] ?? 1)) : 0;
+    this.#setAlpha(
+      logicalIndex,
+      channel,
+      this.visibility[channel] ? (selected ? 2 : (colour[3] ?? 1)) : 0,
+    );
     if (bumpVersion) this.version += 1;
   }
 
@@ -131,19 +146,17 @@ export class StageScene {
     this.selectedLogicalIndex = logicalIndex;
     for (const index of [previous, logicalIndex]) {
       if (index === null) continue;
-      for (const [channel, channelOffset] of [["rgb", 0], ["white", 1]]) {
-        const alphaOffset = (index * 2 + channelOffset) * this.instanceStride + 15;
-        this.instanceData[alphaOffset] = this.visibility[channel]
-          ? (index === logicalIndex ? 2 : 1)
-          : 0;
+      for (const channel of ["rgb", "white"]) {
+        const alpha = this.visibility[channel] ? (index === logicalIndex ? 2 : 1) : 0;
+        this.#setAlpha(index, channel, alpha);
       }
     }
     this.version += 1;
   }
 
   getLogicalCentre(logicalIndex) {
-    const rgbOffset = logicalIndex * 2 * this.instanceStride;
-    const whiteOffset = rgbOffset + this.instanceStride;
+    const rgbOffset = logicalIndex * PHYSICAL_PER_FIXTURE * INSTANCE_STRIDE;
+    const whiteOffset = rgbOffset + INSTANCE_STRIDE;
     return [0, 1, 2].map(
       (axis) => (this.instanceData[rgbOffset + axis] + this.instanceData[whiteOffset + axis]) / 2,
     );

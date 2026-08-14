@@ -2,8 +2,10 @@
 
 import http.client
 import json
+import re
 import threading
 from io import StringIO
+from urllib.parse import urljoin
 
 import pytest
 
@@ -284,11 +286,11 @@ def running_server():
         thread.join(timeout=2)
 
 
-def request(server, method, path):
+def request(server, method, path, body=None, headers=None):
     connection = http.client.HTTPConnection(
         server.server_address[0], server.server_address[1], timeout=2
     )
-    connection.request(method, path)
+    connection.request(method, path, body=body, headers=headers or {})
     response = connection.getresponse()
     body = response.read()
     headers = dict(response.getheaders())
@@ -374,6 +376,89 @@ def test_connectivity_probe_reports_an_unreachable_websocket(
     }
 
 
+def test_fixture_endpoint_applies_a_valid_command(running_server, monkeypatch):
+    commands = []
+
+    async def apply(_config, payload):
+        commands.append(payload)
+
+    monkeypatch.setattr("pylightstage.lswebui.server._apply_fixture_control", apply)
+    payload = {"action": "set", "arc": 2, "light": 5}
+
+    status, headers, body = request(
+        running_server,
+        "POST",
+        "/api/fixture",
+        body=json.dumps(payload),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert status == 200
+    assert headers["Cache-Control"] == "no-store"
+    assert json.loads(body) == {"status": "ok", **payload}
+    assert commands == [payload]
+
+
+@pytest.mark.parametrize(
+    "body, expected_error",
+    [
+        ("", "request body must contain JSON"),
+        ("[]", "request body must be a JSON object"),
+        ("{", "Expecting property name"),
+    ],
+)
+def test_fixture_endpoint_rejects_invalid_json(running_server, body, expected_error):
+    status, _, response_body = request(
+        running_server,
+        "POST",
+        "/api/fixture",
+        body=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert status == 400
+    assert expected_error in json.loads(response_body)["error"]
+
+
+@pytest.mark.parametrize(
+    "exception, expected_status, expected_error",
+    [
+        (TimeoutError(), 504, "Timed out connecting to ws://test-stage:8080/ws"),
+        (
+            RuntimeError("invalid frame"),
+            502,
+            "LightStage protocol error: invalid frame",
+        ),
+        (
+            Exception("disconnected"),
+            502,
+            (
+                "LightStage command failed at ws://test-stage:8080/ws: "
+                "Exception: disconnected"
+            ),
+        ),
+    ],
+)
+def test_fixture_endpoint_preserves_client_error_mapping(
+    running_server, monkeypatch, exception, expected_status, expected_error
+):
+    async def fail(*_):
+        raise exception
+
+    monkeypatch.setattr("pylightstage.lswebui.server._apply_fixture_control", fail)
+
+    status, _, body = request(
+        running_server,
+        "POST",
+        "/api/fixture",
+        body='{"action":"set"}',
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert status == expected_status
+    assert json.loads(body) == {"error": expected_error}
+
+
 def test_browser_connectivity_status_is_driven_by_a_repeated_read_probe(running_server):
     status, _, body = request(running_server, "GET", "/assets/app.js")
 
@@ -391,7 +476,17 @@ def test_browser_connectivity_status_is_driven_by_a_repeated_read_probe(running_
     "path, content_type, marker",
     [
         ("/", "text/html", b"stage-view"),
+        ("/assets/api.js", "text/javascript", b"controlFixture"),
         ("/assets/app.js", "text/javascript", b"WebGPURenderer"),
+        ("/assets/camera.js", "text/javascript", b"installCameraControls"),
+        ("/assets/dom.js", "text/javascript", b"Required interface element"),
+        (
+            "/assets/fixture-controls.js",
+            "text/javascript",
+            b"installFixtureControls",
+        ),
+        ("/assets/math.js", "text/javascript", b"resizeCanvas"),
+        ("/assets/scene.js", "text/javascript", b"StageScene"),
         ("/assets/renderers/canvas2d.js", "text/javascript", b"honeycomb view"),
         ("/assets/renderers/webgpu.js", "text/javascript", b"vertex_main"),
     ],
@@ -402,6 +497,23 @@ def test_packaged_web_assets_are_served(running_server, path, content_type, mark
     assert status == 200
     assert headers["Content-Type"].startswith(content_type)
     assert marker in body
+
+
+def test_every_browser_module_import_is_allow_listed(running_server):
+    pending = ["/assets/app.js"]
+    visited = set()
+
+    while pending:
+        path = pending.pop()
+        if path in visited:
+            continue
+        status, _, body = request(running_server, "GET", path)
+        assert status == 200, f"Module import is not served: {path}"
+        visited.add(path)
+        imports = re.findall(r'from\s+["\'](.+?)["\']', body.decode())
+        pending.extend(urljoin(path, imported) for imported in imports)
+
+    assert len(visited) == 9
 
 
 def test_only_allow_listed_assets_are_exposed(running_server):

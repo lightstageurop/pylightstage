@@ -20,6 +20,21 @@ from ..utils import color_mode, polarization_mode, validate_index, validate_inte
 
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8000
+_MAX_REQUEST_BYTES = 32_768
+_JSON_TYPE = "application/json; charset=utf-8"
+_CSP = (
+    "default-src 'self'; connect-src 'self' ws: wss:; "
+    "img-src 'self' data:; script-src 'self'; style-src 'self'; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+)
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Content-Security-Policy": _CSP,
+}
 
 _INSPECT_ACTIONS = {
     "get-config": "get_config",
@@ -50,7 +65,15 @@ _STATIC_FILES: dict[str, tuple[str, str]] = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/assets/api.js": ("api.js", "text/javascript; charset=utf-8"),
     "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/camera.js": ("camera.js", "text/javascript; charset=utf-8"),
+    "/assets/dom.js": ("dom.js", "text/javascript; charset=utf-8"),
+    "/assets/fixture-controls.js": (
+        "fixture-controls.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/math.js": ("math.js", "text/javascript; charset=utf-8"),
     "/assets/scene.js": ("scene.js", "text/javascript; charset=utf-8"),
     "/assets/renderers/canvas2d.js": (
         "renderers/canvas2d.js",
@@ -63,29 +86,26 @@ _STATIC_FILES: dict[str, tuple[str, str]] = {
 }
 
 
+def _required_index(payload: dict[str, Any], name: str, size: int) -> int:
+    value = payload.get(name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    return validate_index(name, value, size=size)
+
+
 async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) -> None:
     """Apply one explicit fixture action through the same client API as lscli."""
 
     action = payload.get("action")
     if action not in ("set", "clear"):
         raise ValueError("action must be 'set' or 'clear'")
-    arc = payload.get("arc")
-    light = payload.get("light")
-    if not isinstance(arc, int) or isinstance(arc, bool):
-        raise TypeError("arc must be an integer")
-    if not isinstance(light, int) or isinstance(light, bool):
-        raise TypeError("light must be an integer")
-    arc = validate_index("arc", arc, size=12)
-    light = validate_index("light", light, size=14)
-
-    intensity = payload.get("intensity", [255, 255, 255])
-    if action == "clear":
-        intensity = [0, 0, 0]
-    intensity = validate_intensity(intensity)
+    arc = _required_index(payload, "arc", 12)
+    light = _required_index(payload, "light", 14)
+    intensity = validate_intensity(
+        [0, 0, 0] if action == "clear" else payload.get("intensity", [255, 255, 255])
+    )
 
     selector = payload.get("selector", "direct")
-    color = color_mode("rgbw")
-    polarization = polarization_mode("up")
     if selector == "direct":
         color = color_mode(payload.get("color", "rgbw"))
     elif selector == "polarized":
@@ -129,6 +149,54 @@ def _json_default(value: object) -> object:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        default=_json_default,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+
+def _browser_config(config: ServerConfig) -> dict[str, object]:
+    return {
+        "bind": config.bind,
+        "port": config.port,
+        "lightstage_uri": config.lightstage_uri,
+        "webgpu": {"preferred": True, "fallback": "canvas2d"},
+        "features": {"fixture_control": True},
+    }
+
+
+def _stage_error(
+    exc: Exception, config: ServerConfig, operation: str
+) -> tuple[HTTPStatus, str]:
+    """Map client, validation, and protocol failures to the public HTTP API."""
+
+    if isinstance(exc, (ValueError, IndexError, TypeError)):
+        return HTTPStatus.BAD_REQUEST, str(exc)
+    if isinstance(exc, TimeoutError):
+        return (
+            HTTPStatus.GATEWAY_TIMEOUT,
+            str(exc) or f"Timed out connecting to {config.lightstage_uri}",
+        )
+    if isinstance(exc, OSError):
+        return (
+            HTTPStatus.BAD_GATEWAY,
+            f"Could not connect to {config.lightstage_uri}: {exc}",
+        )
+    if operation == "command" and isinstance(exc, RuntimeError):
+        return HTTPStatus.BAD_GATEWAY, f"LightStage protocol error: {exc}"
+    detail = exc or "no details provided"
+    return (
+        HTTPStatus.BAD_GATEWAY,
+        (
+            f"LightStage {operation} failed at {config.lightstage_uri}: "
+            f"{type(exc).__name__}: {detail}"
+        ),
+    )
+
+
 class LightStageWebServer(ThreadingHTTPServer):
     """Thread-per-request server with prompt process shutdown semantics."""
 
@@ -156,41 +224,10 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_error(HTTPStatus.METHOD_NOT_ALLOWED, "Method not allowed")
                 return
             try:
-                content_length = int(self.headers.get("Content-Length", ""))
-                if not 0 < content_length <= 32_768:
-                    raise ValueError("request body must contain JSON")
-                payload = json.loads(self.rfile.read(content_length))
-                if not isinstance(payload, dict):
-                    raise TypeError("request body must be a JSON object")
+                payload = self._read_json_object()
                 asyncio.run(_apply_fixture_control(config, payload))
-            except (ValueError, IndexError, TypeError) as exc:
-                self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
-                return
-            except TimeoutError as exc:
-                self._send_error(
-                    HTTPStatus.GATEWAY_TIMEOUT,
-                    str(exc) or f"Timed out connecting to {config.lightstage_uri}",
-                )
-                return
-            except OSError as exc:
-                self._send_error(
-                    HTTPStatus.BAD_GATEWAY,
-                    f"Could not connect to {config.lightstage_uri}: {exc}",
-                )
-                return
-            except RuntimeError as exc:
-                self._send_error(
-                    HTTPStatus.BAD_GATEWAY,
-                    f"LightStage protocol error: {exc}",
-                )
-                return
-            # Network and protocol failures span several websocket exception types.
             except Exception as exc:  # noqa: BLE001
-                self._send_error(
-                    HTTPStatus.BAD_GATEWAY,
-                    f"LightStage command failed at {config.lightstage_uri}: "
-                    f"{type(exc).__name__}: {exc or 'no details provided'}",
-                )
+                self._send_stage_error(exc, "command")
                 return
             self._send_json(
                 {
@@ -202,6 +239,15 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
                 head_only=False,
             )
 
+        def _read_json_object(self) -> dict[str, Any]:
+            content_length = int(self.headers.get("Content-Length", ""))
+            if not 0 < content_length <= _MAX_REQUEST_BYTES:
+                raise ValueError("request body must contain JSON")
+            payload = json.loads(self.rfile.read(content_length))
+            if not isinstance(payload, dict):
+                raise TypeError("request body must be a JSON object")
+            return payload
+
         def _handle(self, *, head_only: bool) -> None:
             request_url = urlsplit(self.path)
             path = unquote(request_url.path)
@@ -211,42 +257,14 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
                 )
                 return
             if path == "/api/config":
-                browser_config = asdict(config)
-                browser_config.pop("log_requests")
-                browser_config["webgpu"] = {"preferred": True, "fallback": "canvas2d"}
-                browser_config["features"] = {"fixture_control": True}
-                self._send_json(browser_config, head_only=head_only)
+                self._send_json(_browser_config(config), head_only=head_only)
                 return
             if path == "/api/inspect":
                 action = parse_qs(request_url.query).get("action", [""])[0]
                 try:
                     result = asyncio.run(_inspect_server(config, action))
-                except (ValueError, TypeError) as exc:
-                    self._send_error(
-                        HTTPStatus.BAD_REQUEST, str(exc), head_only=head_only
-                    )
-                    return
-                except TimeoutError as exc:
-                    self._send_error(
-                        HTTPStatus.GATEWAY_TIMEOUT,
-                        str(exc) or f"Timed out connecting to {config.lightstage_uri}",
-                        head_only=head_only,
-                    )
-                    return
-                except OSError as exc:
-                    self._send_error(
-                        HTTPStatus.BAD_GATEWAY,
-                        f"Could not connect to {config.lightstage_uri}: {exc}",
-                        head_only=head_only,
-                    )
-                    return
                 except Exception as exc:  # noqa: BLE001
-                    self._send_error(
-                        HTTPStatus.BAD_GATEWAY,
-                        f"LightStage query failed at {config.lightstage_uri}: "
-                        f"{type(exc).__name__}: {exc or 'no details provided'}",
-                        head_only=head_only,
-                    )
+                    self._send_stage_error(exc, "query", head_only=head_only)
                     return
                 self._send_json(
                     {"action": action, "result": result}, head_only=head_only
@@ -270,19 +288,23 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             self._send(HTTPStatus.OK, body, content_type, head_only=head_only)
 
         def _send_json(self, value: object, *, head_only: bool) -> None:
-            body = json.dumps(
-                value,
-                default=_json_default,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode()
             self._send(
                 HTTPStatus.OK,
-                body,
-                "application/json; charset=utf-8",
+                _json_bytes(value),
+                _JSON_TYPE,
                 head_only=head_only,
                 cache_control="no-store",
             )
+
+        def _send_stage_error(
+            self,
+            exc: Exception,
+            operation: str,
+            *,
+            head_only: bool = False,
+        ) -> None:
+            status, message = _stage_error(exc, config, operation)
+            self._send_error(status, message, head_only=head_only)
 
         def _send_error(
             self,
@@ -291,11 +313,10 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             *,
             head_only: bool = False,
         ) -> None:
-            body = json.dumps({"error": message}).encode()
             self._send(
                 status,
-                body,
-                "application/json; charset=utf-8",
+                _json_bytes({"error": message}),
+                _JSON_TYPE,
                 head_only=head_only,
                 cache_control="no-store",
             )
@@ -313,17 +334,8 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache_control)
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
-            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-            self.send_header(
-                "Content-Security-Policy",
-                "default-src 'self'; connect-src 'self' ws: wss:; "
-                "img-src 'self' data:; script-src 'self'; style-src 'self'; "
-                "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
-            )
+            for name, value in _SECURITY_HEADERS.items():
+                self.send_header(name, value)
             self.end_headers()
             if not head_only:
                 self.wfile.write(body)

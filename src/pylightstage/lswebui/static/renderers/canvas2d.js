@@ -1,3 +1,5 @@
+import { resizeCanvas } from "../math.js";
+
 const SQRT_3 = Math.sqrt(3);
 
 function cssColour(values, multiplier = 1) {
@@ -26,13 +28,7 @@ export class Canvas2DRenderer {
   }
 
   resize() {
-    const scale = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.floor(this.canvas.clientWidth * scale));
-    const height = Math.max(1, Math.floor(this.canvas.clientHeight * scale));
-    if (this.canvas.width === width && this.canvas.height === height) return false;
-    this.canvas.width = width;
-    this.canvas.height = height;
-    return true;
+    return resizeCanvas(this.canvas);
   }
 
   layout(scene) {
