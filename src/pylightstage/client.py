@@ -67,9 +67,15 @@ class LightStageClient:
         if self._websocket is not None:
             return  # already connected
 
-        self._websocket = await asyncio.wait_for(
-            websockets.connect(self._uri), timeout=self._connect_timeout
-        )
+        try:
+            self._websocket = await asyncio.wait_for(
+                websockets.connect(self._uri), timeout=self._connect_timeout
+            )
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"Timed out connecting to {self._uri} after "
+                f"{self._connect_timeout:g} seconds"
+            ) from exc
         self._disconnected_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver())
 

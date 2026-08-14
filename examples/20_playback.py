@@ -19,7 +19,7 @@ from pylightstage import (
 )
 
 # Default WebSocket endpoint for a locally running Light Stage server.
-SERVER_URI = "ws://127.0.0.1:8080/ws"
+SERVER_URI = "ws://172.30.40.238:8080/ws"
 
 
 def print_summary(summary: SequenceSummary, title: str = "Sequence Summary") -> None:

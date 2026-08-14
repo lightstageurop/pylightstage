@@ -17,6 +17,7 @@
     Repository = "https://github.com/lightstageurop/pylightstage"
   [project.scripts]
     lscli = "pylightstage.lscli:main"
+    lswebui = "pylightstage.lswebui:main"
 
 [dependency-groups]
   dev = [
@@ -29,6 +30,9 @@
 
 [tool.setuptools.packages.find]
   where = ["src"]
+
+[tool.setuptools.package-data]
+  "pylightstage.lswebui" = ["static/*.css", "static/*.html", "static/*.js", "static/renderers/*.js"]
 
 [tool.pytest.ini_options]
   addopts = "-ra -q -m 'not integration' --cov"

@@ -1,0 +1,316 @@
+"""HTTP server primitives for the local LightStage web interface."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import socket
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import files
+from typing import Any
+from urllib.parse import unquote, urlsplit
+
+from ..client import LightStageClient
+from ..lscli import DEFAULT_URI
+from ..utils import color_mode, polarization_mode, validate_index, validate_intensity
+
+DEFAULT_BIND = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+
+@dataclass(frozen=True, slots=True)
+class ServerConfig:
+    """Settings shared by the HTTP server and browser application."""
+
+    bind: str = DEFAULT_BIND
+    port: int = DEFAULT_PORT
+    lightstage_uri: str = DEFAULT_URI
+    log_requests: bool = False
+
+    def validate(self) -> None:
+        if not self.bind:
+            raise ValueError("bind address must not be empty")
+        if not 0 <= self.port <= 65535:
+            raise ValueError("port must be between 0 and 65535")
+        if not self.lightstage_uri.startswith(("ws://", "wss://")):
+            raise ValueError("LightStage URI must use ws:// or wss://")
+
+
+_STATIC_FILES: dict[str, tuple[str, str]] = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/assets/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/assets/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/assets/scene.js": ("scene.js", "text/javascript; charset=utf-8"),
+    "/assets/renderers/canvas2d.js": (
+        "renderers/canvas2d.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/renderers/webgpu.js": (
+        "renderers/webgpu.js",
+        "text/javascript; charset=utf-8",
+    ),
+}
+
+
+async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) -> None:
+    """Apply one explicit fixture action through the same client API as lscli."""
+
+    action = payload.get("action")
+    if action not in ("set", "clear"):
+        raise ValueError("action must be 'set' or 'clear'")
+    arc = payload.get("arc")
+    light = payload.get("light")
+    if not isinstance(arc, int) or isinstance(arc, bool):
+        raise TypeError("arc must be an integer")
+    if not isinstance(light, int) or isinstance(light, bool):
+        raise TypeError("light must be an integer")
+    arc = validate_index("arc", arc, size=12)
+    light = validate_index("light", light, size=14)
+
+    intensity = payload.get("intensity", [255, 255, 255])
+    if action == "clear":
+        intensity = [0, 0, 0]
+    intensity = validate_intensity(intensity)
+
+    selector = payload.get("selector", "direct")
+    color = color_mode("rgbw")
+    polarization = polarization_mode("up")
+    if selector == "direct":
+        color = color_mode(payload.get("color", "rgbw"))
+    elif selector == "polarized":
+        polarization = polarization_mode(payload.get("polarization", "up"))
+    else:
+        raise ValueError("selector must be 'direct' or 'polarized'")
+
+    async with LightStageClient(uri=config.lightstage_uri) as client:
+        if selector == "direct":
+            await client.set_light(
+                light=light,
+                arc=arc,
+                color=color,
+                intensity=intensity,
+            )
+        else:
+            await client.set_pol_light(
+                light=light,
+                arc=arc,
+                pol=polarization,
+                intensity=intensity,
+            )
+
+
+class LightStageWebServer(ThreadingHTTPServer):
+    """Thread-per-request server with prompt process shutdown semantics."""
+
+    allow_reuse_address = True
+    daemon_threads = True
+    block_on_close = False
+
+
+def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
+    static_root = files("pylightstage.lswebui").joinpath("static")
+
+    class WebUIRequestHandler(BaseHTTPRequestHandler):
+        server_version = "pylightstage-lswebui"
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:
+            self._handle(head_only=False)
+
+        def do_HEAD(self) -> None:
+            self._handle(head_only=True)
+
+        def do_POST(self) -> None:
+            path = unquote(urlsplit(self.path).path)
+            if path != "/api/fixture":
+                self._send_error(HTTPStatus.METHOD_NOT_ALLOWED, "Method not allowed")
+                return
+            try:
+                content_length = int(self.headers.get("Content-Length", ""))
+                if not 0 < content_length <= 32_768:
+                    raise ValueError("request body must contain JSON")
+                payload = json.loads(self.rfile.read(content_length))
+                if not isinstance(payload, dict):
+                    raise TypeError("request body must be a JSON object")
+                asyncio.run(_apply_fixture_control(config, payload))
+            except (ValueError, IndexError, TypeError) as exc:
+                self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            except TimeoutError as exc:
+                self._send_error(
+                    HTTPStatus.GATEWAY_TIMEOUT,
+                    str(exc)
+                    or f"Timed out connecting to {config.lightstage_uri}",
+                )
+                return
+            except OSError as exc:
+                self._send_error(
+                    HTTPStatus.BAD_GATEWAY,
+                    f"Could not connect to {config.lightstage_uri}: {exc}",
+                )
+                return
+            except RuntimeError as exc:
+                self._send_error(
+                    HTTPStatus.BAD_GATEWAY,
+                    f"LightStage protocol error: {exc}",
+                )
+                return
+            # Network and protocol failures span several websocket exception types.
+            except Exception as exc:  # noqa: BLE001
+                self._send_error(
+                    HTTPStatus.BAD_GATEWAY,
+                    f"LightStage command failed at {config.lightstage_uri}: "
+                    f"{type(exc).__name__}: {exc or 'no details provided'}",
+                )
+                return
+            self._send_json(
+                {
+                    "status": "ok",
+                    "arc": payload["arc"],
+                    "light": payload["light"],
+                    "action": payload["action"],
+                },
+                head_only=False,
+            )
+
+        def _handle(self, *, head_only: bool) -> None:
+            path = unquote(urlsplit(self.path).path)
+            if path == "/api/health":
+                self._send_json(
+                    {"service": "lswebui", "status": "ok"}, head_only=head_only
+                )
+                return
+            if path == "/api/config":
+                browser_config = asdict(config)
+                browser_config.pop("log_requests")
+                browser_config["webgpu"] = {"preferred": True, "fallback": "canvas2d"}
+                browser_config["features"] = {"fixture_control": True}
+                self._send_json(browser_config, head_only=head_only)
+                return
+
+            asset = _STATIC_FILES.get(path)
+            if asset is None:
+                self._send_error(HTTPStatus.NOT_FOUND, "Not found", head_only=head_only)
+                return
+            relative_path, content_type = asset
+            try:
+                body = static_root.joinpath(*relative_path.split("/")).read_bytes()
+            except (FileNotFoundError, OSError):
+                self._send_error(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "Packaged web asset is unavailable",
+                    head_only=head_only,
+                )
+                return
+            self._send(HTTPStatus.OK, body, content_type, head_only=head_only)
+
+        def _send_json(self, value: object, *, head_only: bool) -> None:
+            body = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+            self._send(
+                HTTPStatus.OK,
+                body,
+                "application/json; charset=utf-8",
+                head_only=head_only,
+                cache_control="no-store",
+            )
+
+        def _send_error(
+            self,
+            status: HTTPStatus,
+            message: str,
+            *,
+            head_only: bool = False,
+        ) -> None:
+            body = json.dumps({"error": message}).encode()
+            self._send(
+                status,
+                body,
+                "application/json; charset=utf-8",
+                head_only=head_only,
+                cache_control="no-store",
+            )
+
+        def _send(
+            self,
+            status: HTTPStatus,
+            body: bytes,
+            content_type: str,
+            *,
+            head_only: bool,
+            cache_control: str = "no-cache",
+        ) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", cache_control)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; connect-src 'self' ws: wss:; "
+                "img-src 'self' data:; script-src 'self'; style-src 'self'; "
+                "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+            )
+            self.end_headers()
+            if not head_only:
+                self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            if config.log_requests:
+                super().log_message(format, *args)
+
+    return WebUIRequestHandler
+
+
+def create_server(config: ServerConfig) -> LightStageWebServer:
+    """Create, bind, and return a configured local web server.
+
+    A port of ``0`` asks the operating system to select an unused port, which
+    is especially useful when embedding the UI or running tests.
+    """
+
+    config.validate()
+    address_family = _address_family(config.bind, config.port)
+    server_type = type(
+        "ConfiguredLightStageWebServer",
+        (LightStageWebServer,),
+        {"address_family": address_family},
+    )
+    return server_type((config.bind, config.port), _handler_for(config))
+
+
+def _address_family(bind: str, port: int) -> socket.AddressFamily:
+    """Choose a socket family while retaining host-name support."""
+
+    flags = socket.AI_PASSIVE if bind in ("0.0.0.0", "::") else 0
+    addresses = socket.getaddrinfo(bind, port, type=socket.SOCK_STREAM, flags=flags)
+    if not addresses:
+        raise OSError(f"could not resolve bind address {bind!r}")
+    if ":" in bind:
+        for family, *_ in addresses:
+            if family == socket.AF_INET6:
+                return socket.AF_INET6
+    for family, *_ in addresses:
+        if family == socket.AF_INET:
+            return socket.AF_INET
+    return addresses[0][0]
+
+
+ServerFactory = Callable[[ServerConfig], LightStageWebServer]
+
+
+__all__ = [
+    "DEFAULT_BIND",
+    "DEFAULT_PORT",
+    "LightStageWebServer",
+    "ServerConfig",
+    "ServerFactory",
+    "create_server",
+]

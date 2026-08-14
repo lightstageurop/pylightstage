@@ -20,7 +20,7 @@ from typing import Any, TextIO
 from ..client import LightStageSyncClient
 from ..models import PlaybackSequence, StageMode
 
-DEFAULT_URI = "ws://10.37.211.100:8080/ws"
+DEFAULT_URI = "ws://172.30.40.238:8080/ws"
 _COLOURS = ("rgb", "w", "rgbw")
 _POLARIZATIONS = ("up", "cp", "pp")
 

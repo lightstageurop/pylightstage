@@ -2,7 +2,8 @@
 
 A Python library and client for the [LightStage server WebSocket API][lsserver].
 
-This includes an asynchronous client, blocking wrapper, playback-sequence helpers, and `lscli` for one-shot command-line actions.
+This includes an asynchronous client, blocking wrapper, playback-sequence helpers,
+`lscli` for terminal control, and `lswebui` for a local WebGPU-ready interface.
 
 > [!CAUTION]
 > ICL's light stage has very bright fixtures that can flash at frequencies up to around 30 Hz.
@@ -142,6 +143,55 @@ Set commands default to `--color rgbw --intensity 255 255 255`; clear commands d
 The CLI exits non-zero for invalid arguments, unreadable sequence files, connection failures, or server errors. Commands with no returned data are silent on success.
 
 </details>
+
+### Local web interface (`lswebui`)
+
+Start the lightweight local server with the installed command or module entry
+point:
+
+```bash
+lswebui
+python -m pylightstage.lswebui
+```
+
+The interface binds to `127.0.0.1:8000` and opens the default browser. It offers
+an instanced WebGPU 3D view and a Canvas 2D honeycomb grid, with one selectable
+hexagon per logical fixture. A compact dashboard switch changes views; when
+WebGPU is unavailable, the grid remains available on its own. The scene model is
+renderer-neutral, so state and fixture controls stay synchronized between views.
+
+Routine settings are available from the command line:
+
+```bash
+lswebui --bind 127.0.0.1 --port 8081 \
+  --uri ws://lightstage.example:8080/ws
+lswebui --port 0 --no-browser  # choose an unused local port
+lswebui --help
+```
+
+Binding to a non-loopback address, such as `0.0.0.0`, makes the HTTP server
+reachable from other hosts and should only be done on a trusted network. WebGPU
+also requires a browser secure context; loopback HTTP is treated as trustworthy
+by modern browsers, while remote deployments should use an HTTPS reverse proxy.
+
+Applications and tests can use the same setup programmatically:
+
+```py
+from pylightstage.lswebui import ServerConfig, create_server
+
+config = ServerConfig(port=0, lightstage_uri="ws://localhost:8080/ws")
+with create_server(config) as server:
+    host, port = server.server_address[:2]
+    print(f"Serving on {host}:{port}")
+    server.serve_forever()
+```
+
+The interface exposes `GET /api/health` for readiness and `GET /api/config` for
+browser bootstrap data. Selecting a cylinder pair in 3D or a hexagon in the grid
+exposes the same direct RGB/W and polarized UP/CP/PP controls. Explicit changes
+are sent through the local server using the same validated client operations as
+`lscli`; merely selecting a fixture or editing an intensity does not send a
+hardware command.
 
 ## License
 

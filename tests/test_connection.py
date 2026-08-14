@@ -63,7 +63,10 @@ async def test_connect_uses_the_configured_timeout():
 
     with patch("pylightstage.client.websockets.connect", new=never_connect):
         client = LightStageClient("ws://unreachable", connect_timeout=0.01)
-        with pytest.raises(TimeoutError):
+        with pytest.raises(
+            TimeoutError,
+            match=r"Timed out connecting to ws://unreachable after 0.01 seconds",
+        ):
             await client.connect()
 
     assert not client.is_connected
