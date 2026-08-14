@@ -9,7 +9,11 @@ import pytest
 
 from pylightstage.lscli import DEFAULT_URI
 from pylightstage.lswebui import DEFAULT_BIND, DEFAULT_PORT, ServerConfig, run
-from pylightstage.lswebui.server import _apply_fixture_control, create_server
+from pylightstage.lswebui.server import (
+    _apply_fixture_control,
+    _inspect_server,
+    create_server,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -195,6 +199,52 @@ async def test_fixture_control_supports_polarized_clear(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "action, method, result",
+    [
+        ("get-config", "get_config", {"arcs": 12}),
+        ("get-mode", "get_mode", "Manual"),
+        ("list-sequences", "list_sequences", []),
+    ],
+)
+async def test_server_inspector_calls_read_only_cli_actions(
+    monkeypatch, action, method, result
+):
+    calls = []
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            calls.append(("connect", uri))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        def __getattr__(self, name):
+            assert name == method
+
+            async def call():
+                calls.append(("read", name))
+                return result
+
+            return call
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    assert (
+        await _inspect_server(ServerConfig(lightstage_uri="ws://stage.test/ws"), action)
+        == result
+    )
+    assert calls == [("connect", "ws://stage.test/ws"), ("read", method)]
+
+
+async def test_server_inspector_rejects_non_read_actions_before_connecting():
+    with pytest.raises(ValueError, match="action must be one of"):
+        await _inspect_server(ServerConfig(), "set-mode")
+
+
+@pytest.mark.parametrize(
     "payload, message",
     [
         ({"action": "set", "arc": 12, "light": 0}, "arc index"),
@@ -261,6 +311,80 @@ def test_health_and_browser_configuration_endpoints(running_server):
     assert config["webgpu"] == {"fallback": "canvas2d", "preferred": True}
     assert config["features"] == {"fixture_control": True}
     assert "log_requests" not in config
+
+
+def test_inspection_endpoint_returns_json_serializable_server_data(
+    running_server, monkeypatch
+):
+    from pylightstage.models import StageMode
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get_mode(self):
+            return StageMode.MANUAL
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    status, headers, body = request(
+        running_server, "GET", "/api/inspect?action=get-mode"
+    )
+
+    assert status == 200
+    assert headers["Cache-Control"] == "no-store"
+    assert json.loads(body) == {"action": "get-mode", "result": "Manual"}
+
+
+def test_inspection_endpoint_rejects_actions_outside_cli_submenu(running_server):
+    status, _, body = request(running_server, "GET", "/api/inspect?action=set-mode")
+
+    assert status == 400
+    assert "action must be one of" in json.loads(body)["error"]
+
+
+def test_connectivity_probe_reports_an_unreachable_websocket(
+    running_server, monkeypatch
+):
+    class UnreachableClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            raise OSError("connection refused")
+
+        async def __aexit__(self, *_):
+            return None
+
+    monkeypatch.setattr(
+        "pylightstage.lswebui.server.LightStageClient", UnreachableClient
+    )
+
+    status, _, body = request(running_server, "GET", "/api/inspect?action=get-mode")
+
+    assert status == 502
+    assert json.loads(body) == {
+        "error": "Could not connect to ws://test-stage:8080/ws: connection refused"
+    }
+
+
+def test_browser_connectivity_status_is_driven_by_a_repeated_read_probe(running_server):
+    status, _, body = request(running_server, "GET", "/assets/app.js")
+
+    script = body.decode()
+    assert status == 200
+    assert 'await readServer("get-mode")' in script
+    assert (
+        "window.setTimeout(checkConnectivity, CONNECTIVITY_CHECK_INTERVAL_MS)" in script
+    )
+    assert 'setConnectivityStatus("ready", "Ready"' in script
+    assert 'setConnectivityStatus("error", "Unavailable"' in script
 
 
 @pytest.mark.parametrize(

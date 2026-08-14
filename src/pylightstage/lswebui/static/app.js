@@ -8,16 +8,21 @@ const canvasShell = document.querySelector("#canvas-shell");
 const backend = document.querySelector("#renderer-backend");
 const endpoint = document.querySelector("#stage-endpoint");
 const status = document.querySelector("#service-status");
+const connectionStatusDot = document.querySelector(".mini-status");
 const fallbackNote = document.querySelector("#fallback-note");
 const viewButtons = [...document.querySelectorAll("[data-view]")];
 const modeButtons = [...document.querySelectorAll(".view-mode-switch [data-mode]")];
 const controlForm = document.querySelector("#fixture-control");
 const controlFieldset = controlForm.querySelector("fieldset");
 const controlStatus = document.querySelector("#control-status");
+const inspectorForm = document.querySelector("#server-inspector");
+const inspectorResult = document.querySelector("#inspect-result");
 const intensityInputs = [0, 1, 2].map((index) => document.querySelector(`#intensity-${index}`));
 const intensityRanges = [0, 1, 2].map((index) => document.querySelector(`#intensity-${index}-range`));
 let fixtureControlAvailable = false;
 let activeMode = "3d";
+
+const CONNECTIVITY_CHECK_INTERVAL_MS = 3000;
 
 const CAMERA_PRESETS = {
   perspective: { yaw: 0.7, pitch: 0.27, distance: 3.75 },
@@ -31,6 +36,40 @@ async function loadConfiguration() {
   const response = await fetch("/api/config", { cache: "no-store" });
   if (!response.ok) throw new Error(`Configuration request failed (${response.status})`);
   return response.json();
+}
+
+async function readServer(action) {
+  const response = await fetch(`/api/inspect?action=${encodeURIComponent(action)}`, {
+    cache: "no-store",
+  });
+  const body = await response.text();
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new Error(`Server inspection returned an invalid response (${response.status}).`);
+  }
+  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  return payload.result;
+}
+
+function setConnectivityStatus(state, message, detail = "") {
+  status.textContent = message;
+  status.dataset.state = state;
+  status.title = detail;
+  connectionStatusDot.dataset.state = state;
+}
+
+async function checkConnectivity() {
+  try {
+    await readServer("get-mode");
+    setConnectivityStatus("ready", "Ready", "LightStage server is reachable.");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    setConnectivityStatus("error", "Unavailable", detail);
+  } finally {
+    window.setTimeout(checkConnectivity, CONNECTIVITY_CHECK_INTERVAL_MS);
+  }
 }
 
 async function createRenderers() {
@@ -352,14 +391,36 @@ function installFixtureControls(scene) {
   document.querySelector("#clear-fixture").addEventListener("click", () => sendFixtureControl(scene, "clear"));
 }
 
+function installServerInspector() {
+  inspectorForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const action = inspectorForm.elements.action.value;
+    const button = inspectorForm.querySelector("button");
+    button.disabled = true;
+    inspectorResult.hidden = false;
+    inspectorResult.textContent = "Reading…";
+    inspectorResult.dataset.state = "working";
+    try {
+      const result = await readServer(action);
+      inspectorResult.textContent = JSON.stringify(result, null, 2);
+      inspectorResult.dataset.state = "success";
+    } catch (error) {
+      inspectorResult.textContent = error instanceof Error ? error.message : String(error);
+      inspectorResult.dataset.state = "error";
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 async function start() {
   try {
     const config = await loadConfiguration();
     fixtureControlAvailable = config.features?.fixture_control === true;
     endpoint.textContent = config.lightstage_uri;
     endpoint.title = config.lightstage_uri;
-    status.textContent = "Ready";
-    status.dataset.state = "ready";
+    setConnectivityStatus("checking", "Checking", `Checking ${config.lightstage_uri}…`);
+    checkConnectivity();
     const renderers = await createRenderers();
     const scene = new StageScene();
 
@@ -370,6 +431,7 @@ async function start() {
       scene.setLayerVisibility("white", event.currentTarget.checked);
     });
     installFixtureControls(scene);
+    installServerInspector();
     installCameraControls(scene, (logicalIndex) => selectLogicalFixture(scene, logicalIndex));
     installGridControls(renderers.grid, (logicalIndex) => selectLogicalFixture(scene, logicalIndex));
     installModeControls(renderers);
@@ -381,10 +443,10 @@ async function start() {
     };
     requestAnimationFrame(frame);
   } catch (error) {
-    status.textContent = "Unavailable";
-    status.dataset.state = "error";
+    const detail = error instanceof Error ? error.message : String(error);
+    setConnectivityStatus("error", "Unavailable", detail);
     fallbackNote.hidden = false;
-    fallbackNote.textContent = error instanceof Error ? error.message : String(error);
+    fallbackNote.textContent = detail;
   }
 }
 

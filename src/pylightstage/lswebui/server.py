@@ -6,12 +6,13 @@ import asyncio
 import json
 import socket
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
+from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..client import LightStageClient
 from ..lscli import DEFAULT_URI
@@ -19,6 +20,12 @@ from ..utils import color_mode, polarization_mode, validate_index, validate_inte
 
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8000
+
+_INSPECT_ACTIONS = {
+    "get-config": "get_config",
+    "get-mode": "get_mode",
+    "list-sequences": "list_sequences",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +110,25 @@ async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) 
             )
 
 
+async def _inspect_server(config: ServerConfig, action: str) -> Any:
+    """Run one read-only action from lscli's Inspect Server submenu."""
+
+    method_name = _INSPECT_ACTIONS.get(action)
+    if method_name is None:
+        choices = ", ".join(sorted(_INSPECT_ACTIONS))
+        raise ValueError(f"action must be one of: {choices}")
+    async with LightStageClient(uri=config.lightstage_uri) as client:
+        return await getattr(client, method_name)()
+
+
+def _json_default(value: object) -> object:
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 class LightStageWebServer(ThreadingHTTPServer):
     """Thread-per-request server with prompt process shutdown semantics."""
 
@@ -143,8 +169,7 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             except TimeoutError as exc:
                 self._send_error(
                     HTTPStatus.GATEWAY_TIMEOUT,
-                    str(exc)
-                    or f"Timed out connecting to {config.lightstage_uri}",
+                    str(exc) or f"Timed out connecting to {config.lightstage_uri}",
                 )
                 return
             except OSError as exc:
@@ -178,7 +203,8 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             )
 
         def _handle(self, *, head_only: bool) -> None:
-            path = unquote(urlsplit(self.path).path)
+            request_url = urlsplit(self.path)
+            path = unquote(request_url.path)
             if path == "/api/health":
                 self._send_json(
                     {"service": "lswebui", "status": "ok"}, head_only=head_only
@@ -190,6 +216,41 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
                 browser_config["webgpu"] = {"preferred": True, "fallback": "canvas2d"}
                 browser_config["features"] = {"fixture_control": True}
                 self._send_json(browser_config, head_only=head_only)
+                return
+            if path == "/api/inspect":
+                action = parse_qs(request_url.query).get("action", [""])[0]
+                try:
+                    result = asyncio.run(_inspect_server(config, action))
+                except (ValueError, TypeError) as exc:
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST, str(exc), head_only=head_only
+                    )
+                    return
+                except TimeoutError as exc:
+                    self._send_error(
+                        HTTPStatus.GATEWAY_TIMEOUT,
+                        str(exc) or f"Timed out connecting to {config.lightstage_uri}",
+                        head_only=head_only,
+                    )
+                    return
+                except OSError as exc:
+                    self._send_error(
+                        HTTPStatus.BAD_GATEWAY,
+                        f"Could not connect to {config.lightstage_uri}: {exc}",
+                        head_only=head_only,
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    self._send_error(
+                        HTTPStatus.BAD_GATEWAY,
+                        f"LightStage query failed at {config.lightstage_uri}: "
+                        f"{type(exc).__name__}: {exc or 'no details provided'}",
+                        head_only=head_only,
+                    )
+                    return
+                self._send_json(
+                    {"action": action, "result": result}, head_only=head_only
+                )
                 return
 
             asset = _STATIC_FILES.get(path)
@@ -209,7 +270,12 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             self._send(HTTPStatus.OK, body, content_type, head_only=head_only)
 
         def _send_json(self, value: object, *, head_only: bool) -> None:
-            body = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+            body = json.dumps(
+                value,
+                default=_json_default,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
             self._send(
                 HTTPStatus.OK,
                 body,

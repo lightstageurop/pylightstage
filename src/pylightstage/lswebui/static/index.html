@@ -18,7 +18,7 @@
       </div>
       <div class="topbar-meta">
         <span class="backend">Renderer <strong id="renderer-backend">detecting</strong></span>
-        <div class="service-state">
+        <div class="service-state" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
           <span id="service-status">Starting</span>
         </div>
@@ -90,9 +90,21 @@
         <section class="connection-card" aria-label="Connection details">
           <div class="connection-title">
             <span class="mini-status" aria-hidden="true"></span>
-            <strong>Local session</strong>
+            <strong>Current Session</strong>
           </div>
           <span id="stage-endpoint">Loading…</span>
+          <form id="server-inspector" class="server-inspector">
+            <label for="inspect-action">Inspect server</label>
+            <div class="inspect-controls">
+              <select id="inspect-action" name="action">
+                <option value="get-config">Configuration</option>
+                <option value="get-mode">Current mode</option>
+                <option value="list-sequences">Sequences</option>
+              </select>
+              <button type="submit">Read</button>
+            </div>
+            <pre id="inspect-result" role="status" aria-live="polite" hidden></pre>
+          </form>
         </section>
       </aside>
 
