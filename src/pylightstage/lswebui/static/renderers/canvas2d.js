@@ -1,13 +1,12 @@
 import { resizeCanvas } from "../math.js";
 
 const SQRT_3 = Math.sqrt(3);
-const COLUMNS_PER_ARC = 2;
 
-/** Map arc-major fixture numbering onto the LightStage's physical two-column arcs. */
+/** Map each arc to one top-to-bottom, alternating honeycomb column. */
 export function fixtureGridPosition(arc, light) {
   return {
-    column: arc * COLUMNS_PER_ARC + light % COLUMNS_PER_ARC,
-    row: Math.floor(light / COLUMNS_PER_ARC),
+    column: arc,
+    row: light,
   };
 }
 
@@ -43,8 +42,8 @@ export class Canvas2DRenderer {
   layout(scene) {
     const { width, height } = this.canvas;
     const padding = Math.max(20, Math.min(width, height) * 0.045);
-    const columnCount = scene.arcs * COLUMNS_PER_ARC;
-    const rowCount = Math.ceil(scene.lightsPerArc / COLUMNS_PER_ARC);
+    const columnCount = scene.arcs;
+    const rowCount = scene.lightsPerArc;
     const gridWidth = (columnCount + 0.5) * SQRT_3;
     const gridHeight = 1.5 * (rowCount - 1) + 2;
     const stepRadius = Math.min(
