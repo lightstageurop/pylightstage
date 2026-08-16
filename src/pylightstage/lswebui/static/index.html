@@ -1,227 +1,239 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
-    <title>LightStage Dashboard</title>
-    <link rel="stylesheet" href="/assets/styles.css">
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <div>
-          <p class="eyebrow">pylightstage</p>
-          <h1>LightStage</h1>
-        </div>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>LightStage Dashboard</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">pylightstage</p>
+        <h1>LightStage</h1>
       </div>
-      <div class="topbar-meta">
-        <span class="backend">Renderer <strong id="renderer-backend">detecting</strong></span>
-        <div class="service-state" role="status" aria-live="polite">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="service-status">Starting</span>
-        </div>
+    </div>
+    <div class="topbar-meta">
+      <span class="backend">Renderer <strong id="renderer-backend">detecting</strong></span>
+      <div class="service-state" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="service-status">Starting</span>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <main class="dashboard">
-      <aside class="toolbar toolbar-left" aria-label="Stage toolbar">
-        <section class="tool-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Workspace</p>
-              <h2>Stage controls</h2>
-            </div>
-          </div>
-          <div class="segmented-control" aria-label="Dashboard mode">
-            <button class="segment active" type="button" aria-pressed="true">Scene</button>
-            <button class="segment" type="button" aria-pressed="false" disabled>Capture</button>
-          </div>
-        </section>
-
-        <section class="tool-section">
-          <div class="section-heading compact">
-            <h3>View</h3>
-            <span id="view-kind" class="section-count">3D</span>
-          </div>
-          <div id="camera-controls">
-            <div class="view-grid">
-              <button class="tool-button active" type="button" data-view="perspective" aria-pressed="true">
-                <span class="view-icon perspective-icon" aria-hidden="true"></span>
-                Perspective
-              </button>
-              <button class="tool-button" type="button" data-view="front" aria-pressed="false">
-                <span class="view-icon front-icon" aria-hidden="true"></span>
-                Front
-              </button>
-              <button class="tool-button" type="button" data-view="top" aria-pressed="false">
-                <span class="view-icon top-icon" aria-hidden="true"></span>
-                Top
-              </button>
-            </div>
-            <button class="wide-button" id="reset-view" type="button">
-              <span aria-hidden="true">↺</span>
-              Reset camera
-              <kbd>R</kbd>
-            </button>
-          </div>
-        </section>
-
-        <section class="tool-section grow">
-          <div class="section-heading compact">
-            <h3>Layers</h3>
-            <span class="section-count">2</span>
-          </div>
-          <label class="layer-row">
-            <input id="show-rgb" type="checkbox" checked>
-            <span class="layer-swatch rgb-swatch" aria-hidden="true"></span>
-            <span><strong>RGB fixtures</strong><small>Colour emitters</small></span>
-            <b>168</b>
-          </label>
-          <label class="layer-row">
-            <input id="show-white" type="checkbox" checked>
-            <span class="layer-swatch white-swatch" aria-hidden="true"></span>
-            <span><strong>W fixtures</strong><small>White emitters</small></span>
-            <b>168</b>
-          </label>
-        </section>
-
-        <section class="connection-card" aria-label="Connection details">
-          <div class="connection-title">
-            <span class="mini-status" aria-hidden="true"></span>
-            <strong>Current Session</strong>
-          </div>
-          <span id="stage-endpoint">Loading…</span>
-          <form id="server-inspector" class="server-inspector">
-            <label for="inspect-action">Inspect server</label>
-            <div class="inspect-controls">
-              <select id="inspect-action" name="action">
-                <option value="get-config">Configuration</option>
-                <option value="get-mode">Current mode</option>
-                <option value="list-sequences">Sequences</option>
-              </select>
-              <button type="submit">Read</button>
-            </div>
-            <pre id="inspect-result" role="status" aria-live="polite" hidden></pre>
-          </form>
-        </section>
-      </aside>
-
-      <section class="viewport" aria-labelledby="viewport-title">
-        <div class="viewport-heading">
+  <main class="dashboard">
+    <aside class="toolbar toolbar-left" aria-label="Stage toolbar">
+      <section class="tool-section">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow">Live geometry</p>
-            <h2 id="viewport-title">LightStage overview</h2>
-          </div>
-          <div class="viewport-actions">
-            <div class="stage-stats" aria-label="Stage fixture counts">
-              <span><strong>12</strong> arcs</span>
-              <i aria-hidden="true"></i>
-              <span><strong>168</strong> logical</span>
-              <i aria-hidden="true"></i>
-              <span><strong>336</strong> physical</span>
-            </div>
-            <div class="view-mode-switch" aria-label="Visualization mode">
-              <button class="active" type="button" data-mode="3d" aria-pressed="true">3D</button>
-              <button type="button" data-mode="2d" aria-pressed="false">2D grid</button>
-            </div>
+            <p class="eyebrow">Workspace</p>
+            <h2>Stage controls</h2>
           </div>
         </div>
-        <div id="canvas-shell" class="canvas-shell" data-mode="3d">
-          <canvas id="stage-view" tabindex="0" aria-label="Interactive three-dimensional LightStage fixture visualization. Drag to orbit and scroll to zoom."></canvas>
-          <canvas id="grid-view" tabindex="0" aria-label="Interactive LightStage fixture grid. Select a hexagon to inspect and control that logical fixture." hidden></canvas>
-          <div class="canvas-vignette" aria-hidden="true"></div>
-          <div class="axis-indicator" aria-hidden="true">
-            <span class="axis-y">Y</span>
-            <span class="axis-x">X</span>
-            <span class="axis-z">Z</span>
-          </div>
-          <p id="interaction-hint-3d" class="interaction-hint"><span aria-hidden="true">↔</span> Drag to orbit <i></i> Click a fixture to select <i></i> Scroll to zoom</p>
-          <p id="interaction-hint-2d" class="interaction-hint" hidden><span aria-hidden="true">⬡</span> Click a hexagon to select its logical fixture</p>
+        <div class="segmented-control" aria-label="Dashboard mode">
+          <button class="segment active" type="button" aria-pressed="true">Scene</button>
+          <button class="segment" type="button" aria-pressed="false" disabled>Capture</button>
         </div>
-        <p id="fallback-note" class="notice" hidden>
-          WebGPU is unavailable, so this session is using the Canvas 2D fallback.
-        </p>
       </section>
 
-      <aside class="toolbar toolbar-right" aria-label="Fixture information toolbar">
-        <section class="tool-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Inspector</p>
-              <h2 id="selection-title">No fixture selected</h2>
-            </div>
-            <span id="selection-orientation" class="live-pill">Idle</span>
+      <section class="tool-section">
+        <div class="section-heading compact">
+          <h3>View</h3>
+          <span id="view-kind" class="section-count">3D</span>
+        </div>
+        <div id="camera-controls">
+          <div class="view-grid">
+            <button class="tool-button active" type="button" data-view="perspective" aria-pressed="true">
+              <span class="view-icon perspective-icon" aria-hidden="true"></span>
+              Perspective
+            </button>
+            <button class="tool-button" type="button" data-view="front" aria-pressed="false">
+              <span class="view-icon front-icon" aria-hidden="true"></span>
+              Front
+            </button>
+            <button class="tool-button" type="button" data-view="top" aria-pressed="false">
+              <span class="view-icon top-icon" aria-hidden="true"></span>
+              Top
+            </button>
           </div>
-          <div id="selection-empty" class="fixture-summary">
-            <span class="fixture-glyph" aria-hidden="true"><i></i><i></i></span>
-            <div>
-              <strong>Select a logical fixture</strong>
-              <p>Click a cylinder pair in 3D or a hexagon in the grid to inspect and control it.</p>
-            </div>
+          <button class="wide-button" id="reset-view" type="button">
+            <span aria-hidden="true">↺</span>
+            Reset camera
+            <kbd>R</kbd>
+          </button>
+        </div>
+      </section>
+
+      <section class="tool-section grow">
+        <div class="section-heading compact">
+          <h3>Layers</h3>
+          <span class="section-count">2</span>
+        </div>
+        <label class="layer-row">
+          <input id="show-rgb" type="checkbox" checked>
+          <span class="layer-swatch rgb-swatch" aria-hidden="true"></span>
+          <span><strong>RGB fixtures</strong><small>Colour emitters</small></span>
+          <b>168</b>
+        </label>
+        <label class="layer-row">
+          <input id="show-white" type="checkbox" checked>
+          <span class="layer-swatch white-swatch" aria-hidden="true"></span>
+          <span><strong>W fixtures</strong><small>White emitters</small></span>
+          <b>168</b>
+        </label>
+      </section>
+
+      <section class="connection-card" aria-label="Connection details">
+        <div class="connection-title">
+          <span class="mini-status" aria-hidden="true"></span>
+          <strong>Current Session</strong>
+        </div>
+        <span id="stage-endpoint">Loading…</span>
+        <form id="server-inspector" class="server-inspector">
+          <label for="inspect-action">Inspect server</label>
+          <div class="inspect-controls">
+            <select id="inspect-action" name="action">
+              <option value="get-config">Configuration</option>
+              <option value="get-mode">Current mode</option>
+              <option value="list-sequences">Sequences</option>
+            </select>
+            <button type="submit">Read</button>
           </div>
-        </section>
-
-        <form id="fixture-control" class="fixture-control grow">
-          <fieldset disabled>
-            <section class="tool-section control-section">
-              <div class="section-heading compact">
-                <h3>Control method</h3>
-              </div>
-              <div class="segmented-control control-mode" role="radiogroup" aria-label="Fixture control method">
-                <label><input type="radio" name="selector" value="direct" checked><span>Channels</span></label>
-                <label><input type="radio" name="selector" value="polarized"><span>Polarized</span></label>
-              </div>
-              <label id="direct-control" class="select-label">
-                Physical channels
-                <select id="fixture-color" name="color">
-                  <option value="rgb">RGB</option>
-                  <option value="w">White</option>
-                  <option value="rgbw" selected>RGB + White</option>
-                </select>
-              </label>
-              <label id="polarized-control" class="select-label" hidden>
-                Polarization
-                <select id="fixture-polarization" name="polarization">
-                  <option value="up">Unpolarized (UP)</option>
-                  <option value="cp">Cross-polarized (CP)</option>
-                  <option value="pp">Parallel-polarized (PP)</option>
-                </select>
-              </label>
-              <p id="routing-note" class="routing-note">Updates both physical cylinders.</p>
-            </section>
-
-            <section class="tool-section control-section">
-              <div class="section-heading compact">
-                <h3>Intensity</h3>
-                <span class="section-count">0–255</span>
-              </div>
-              <div class="intensity-row">
-                <label for="intensity-0">R</label>
-                <input id="intensity-0-range" type="range" min="0" max="255" value="0" aria-label="First intensity channel">
-                <input id="intensity-0" type="number" min="0" max="255" value="0" inputmode="numeric">
-              </div>
-              <div class="intensity-row">
-                <label for="intensity-1">G</label>
-                <input id="intensity-1-range" type="range" min="0" max="255" value="0" aria-label="Second intensity channel">
-                <input id="intensity-1" type="number" min="0" max="255" value="0" inputmode="numeric">
-              </div>
-              <div class="intensity-row">
-                <label for="intensity-2">B</label>
-                <input id="intensity-2-range" type="range" min="0" max="255" value="0" aria-label="Third intensity channel">
-                <input id="intensity-2" type="number" min="0" max="255" value="0" inputmode="numeric">
-              </div>
-              <div class="control-actions">
-                <button id="clear-fixture" class="control-button danger-button" type="button">Turn off</button>
-                <button id="apply-fixture" class="control-button primary-button" type="submit">Apply</button>
-              </div>
-              <p id="control-status" class="control-status" role="status" aria-live="polite">Changes are sent only when you press Apply or Turn off.</p>
-            </section>
-          </fieldset>
+          <pre id="inspect-result" role="status" aria-live="polite" hidden></pre>
         </form>
-      </aside>
-    </main>
-    <script type="module" src="/assets/app.js"></script>
-  </body>
+      </section>
+    </aside>
+
+    <section class="viewport" aria-labelledby="viewport-title">
+      <div class="viewport-heading">
+        <div>
+          <p class="eyebrow">Live geometry</p>
+          <h2 id="viewport-title">LightStage overview</h2>
+        </div>
+        <div class="viewport-actions">
+          <div class="stage-stats" aria-label="Stage fixture counts">
+            <span><strong>12</strong> arcs</span>
+            <i aria-hidden="true"></i>
+            <span><strong>168</strong> logical</span>
+            <i aria-hidden="true"></i>
+            <span><strong>336</strong> physical</span>
+          </div>
+          <div class="view-mode-switch" aria-label="Visualization mode">
+            <button class="active" type="button" data-mode="3d" aria-pressed="true">3D</button>
+            <button type="button" data-mode="2d" aria-pressed="false">2D</button>
+          </div>
+        </div>
+      </div>
+      <div id="canvas-shell" class="canvas-shell" data-mode="3d">
+        <canvas id="stage-view" tabindex="0"
+          aria-label="Interactive three-dimensional LightStage fixture visualization. Drag to orbit and scroll to zoom."></canvas>
+        <canvas id="grid-view" tabindex="0"
+          aria-label="Interactive LightStage fixture grid. Select a hexagon to inspect and control that logical fixture."
+          hidden></canvas>
+        <div class="canvas-vignette" aria-hidden="true"></div>
+        <div class="axis-indicator" aria-hidden="true">
+          <span class="axis-y">Y</span>
+          <span class="axis-x">X</span>
+          <span class="axis-z">Z</span>
+        </div>
+        <p id="interaction-hint-3d" class="interaction-hint"><span aria-hidden="true">↔</span> Drag to orbit <i></i>
+          Click a fixture to select <i></i> Scroll to zoom</p>
+        <p id="interaction-hint-2d" class="interaction-hint" hidden><span aria-hidden="true">⬡</span> Click a hexagon to
+          select its logical fixture</p>
+      </div>
+      <p id="fallback-note" class="notice" hidden>
+        WebGPU is unavailable, so this session is using the Canvas 2D fallback.
+      </p>
+    </section>
+
+    <aside class="toolbar toolbar-right" aria-label="Fixture information toolbar">
+      <section class="tool-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Inspector</p>
+            <h2 id="selection-title">No fixture selected</h2>
+          </div>
+          <span id="selection-orientation" class="live-pill">Idle</span>
+        </div>
+        <div id="selection-empty" class="fixture-summary">
+          <span class="fixture-glyph" aria-hidden="true"><i></i><i></i></span>
+          <div>
+            <strong>Select a logical fixture</strong>
+            <p>Click a cylinder pair in 3D or a hexagon in the grid to inspect and control it.</p>
+          </div>
+        </div>
+      </section>
+
+      <form id="fixture-control" class="fixture-control grow">
+        <fieldset disabled>
+          <section class="tool-section control-section">
+            <div class="section-heading compact">
+              <h3>Control method</h3>
+            </div>
+            <div class="segmented-control control-mode" role="radiogroup" aria-label="Fixture control method">
+              <label><input type="radio" name="selector" value="direct" checked><span>Channels</span></label>
+              <label><input type="radio" name="selector" value="polarized"><span>Polarized</span></label>
+            </div>
+            <label id="direct-control" class="select-label">
+              Physical channels
+              <select id="fixture-color" name="color">
+                <option value="rgb">RGB</option>
+                <option value="w">White</option>
+                <option value="rgbw" selected>RGB + White</option>
+              </select>
+            </label>
+            <label id="polarized-control" class="select-label" hidden>
+              Polarization
+              <select id="fixture-polarization" name="polarization">
+                <option value="up">Unpolarized (UP)</option>
+                <option value="cp">Cross-polarized (CP)</option>
+                <option value="pp">Parallel-polarized (PP)</option>
+              </select>
+            </label>
+            <p id="routing-note" class="routing-note">Updates both physical cylinders.</p>
+          </section>
+
+          <section class="tool-section control-section">
+            <div class="section-heading compact">
+              <h3>Intensity</h3>
+              <span class="section-count">0–255</span>
+            </div>
+            <div class="intensity-row">
+              <label for="intensity-0">R</label>
+              <input id="intensity-0-range" type="range" min="0" max="255" value="0"
+                aria-label="First intensity channel">
+              <input id="intensity-0" type="number" min="0" max="255" value="0" inputmode="numeric">
+            </div>
+            <div class="intensity-row">
+              <label for="intensity-1">G</label>
+              <input id="intensity-1-range" type="range" min="0" max="255" value="0"
+                aria-label="Second intensity channel">
+              <input id="intensity-1" type="number" min="0" max="255" value="0" inputmode="numeric">
+            </div>
+            <div class="intensity-row">
+              <label for="intensity-2">B</label>
+              <input id="intensity-2-range" type="range" min="0" max="255" value="0"
+                aria-label="Third intensity channel">
+              <input id="intensity-2" type="number" min="0" max="255" value="0" inputmode="numeric">
+            </div>
+            <div class="control-actions">
+              <button id="clear-fixture" class="control-button danger-button" type="button">Turn off</button>
+              <button id="apply-fixture" class="control-button primary-button" type="submit">Apply</button>
+            </div>
+            <p id="control-status" class="control-status" role="status" aria-live="polite">Changes are sent only when
+              you press Apply or Turn off.</p>
+          </section>
+        </fieldset>
+      </form>
+    </aside>
+  </main>
+  <script type="module" src="/assets/app.js"></script>
+</body>
+
 </html>
