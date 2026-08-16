@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..client import LightStageClient
 from ..lscli import DEFAULT_URI
+from ..models import ColorMode, PolarizationMode
 from ..utils import color_mode, polarization_mode, validate_index, validate_intensity
 
 DEFAULT_BIND = "127.0.0.1"
@@ -106,6 +107,8 @@ async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) 
     )
 
     selector = payload.get("selector", "direct")
+    color: ColorMode | None = None
+    polarization: PolarizationMode | None = None
     if selector == "direct":
         color = color_mode(payload.get("color", "rgbw"))
     elif selector == "polarized":
@@ -114,7 +117,7 @@ async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) 
         raise ValueError("selector must be 'direct' or 'polarized'")
 
     async with LightStageClient(uri=config.lightstage_uri) as client:
-        if selector == "direct":
+        if color is not None:
             await client.set_light(
                 light=light,
                 arc=arc,
@@ -122,6 +125,7 @@ async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) 
                 intensity=intensity,
             )
         else:
+            assert polarization is not None
             await client.set_pol_light(
                 light=light,
                 arc=arc,
