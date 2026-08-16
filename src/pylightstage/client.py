@@ -152,8 +152,8 @@ class LightStageClient:
             self._fail_pending_requests(
                 RuntimeError(f"WebSocket connection lost: {exc}")
             )
-        except Exception as exc:
-            logger.exception("Unexpected error in receiver loop")
+        except Exception as exc:  # noqa: BLE001 - receiver must fail pending requests
+            logger.error(f"Unexpected error in receiver loop: {exc}")
             # fail waiting futures
             self._fail_pending_requests(exc)
         finally:
@@ -166,7 +166,7 @@ class LightStageClient:
                 asyncio.create_task(callback(event))
             else:
                 callback(event)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - isolate failures in user callbacks
             # if user code crashes, we don't care
             logger.exception("Error in event callback")
 

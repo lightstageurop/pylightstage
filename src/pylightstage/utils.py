@@ -9,7 +9,8 @@ _VERTICAL_RGB_LIGHTS = frozenset({0, 2, 4, 6, 7, 9, 11, 13})
 
 def as_index(name: str, value: int) -> int:
     if isinstance(value, bool):
-        raise TypeError(f"{name} must be an integer")
+        # Normalize all invalid index values to the public ValueError contract.
+        raise ValueError(f"{name} must be an integer")  # noqa: TRY004
     try:
         return operator.index(value)
     except TypeError as exc:

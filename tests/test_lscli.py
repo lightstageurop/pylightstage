@@ -4,6 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from io import StringIO
+from typing import ClassVar
 
 import cbor2
 import pytest
@@ -22,7 +23,7 @@ class Summary:
 
 
 class FakeClient:
-    instances = []
+    instances: ClassVar[list["FakeClient"]] = []
 
     def __init__(self, *, uri, connect_timeout=5.0):
         self.uri = uri
