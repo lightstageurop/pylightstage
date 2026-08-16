@@ -3,7 +3,10 @@
   requires = ["setuptools>=68", "wheel"]
 
 [project]
-  authors = [{ name = "Thomas Aldrian", email = "thomas.aldrian24@imperial.ac.uk" }, { name = "Jinnuo Jiang", email = "ethan.jiang25@imperial.ac.uk" }]
+  authors = [
+    { name = "Jinnuo Jiang", email = "ethan.jiang25@imperial.ac.uk" },
+    { name = "Thomas Aldrian", email = "thomas.aldrian24@imperial.ac.uk" },
+  ]
   dependencies = ["cbor2", "websockets", "zstandard"]
   description = "Python client for ICL RGI group's Lightstage"
   license = { text = "MIT" }

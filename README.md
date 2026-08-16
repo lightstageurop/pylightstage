@@ -36,7 +36,7 @@ Intensities are 3-element tuples like `(r, g, b)` or `(warm, neutral, cool)` wit
 
 Fixture updates can set color fixtures only (`"rgb"`), white only (`"w"`), or both together (`"rgbw"`).
 
-For more information on the hardare, see the [wiki][wiki].
+For more information on the hardware, see the [wiki][wiki].
 
 Basic usage might look like this:
 
@@ -44,18 +44,23 @@ Basic usage might look like this:
 import asyncio
 from pylightstage import LightStageClient
 
-URI = "ws://10.37.211.100:8080/ws"
+URI = "ws://172.30.40.238:8080/ws"
+
 
 async def main():
     async with LightStageClient(uri=URI) as client:
         await client.turn_on_lightstage(color="rgbw", intensity=(255.0, 0.0, 0.0))
+
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
 > [!NOTE]
-> The historical default endpoint is `ws://10.37.211.100:8080/ws`; replace it with your installation's endpoint.
+> The default URI of `ws://172.30.40.238:8080/ws` targets the Raspberry Pi (`lightstagepi`) on the college LAN. Replace this if your endpoint differs.
+
+`lightstagepi` is configured with a static IP of `10.37.211.100` on the dedicated interface connected to the light controllers. Use this if also connected directly via ethernet.
+For now it has also been assigned `172.30.40.238` on the college LAN, though this could change. For more information about the networking setup, see the [wiki][wiki].
 
 See [examples/](examples/) for further usage.
 
@@ -74,7 +79,7 @@ For all commands you can specify a full websocket uri with `--uri`, before the c
 lscli [--uri=ws://lightstage.example:8080/ws] {command}
 ```
 
-Where omitting `--uri` will default to `ws://10.37.211.100:8080/ws`.
+Where omitting `--uri` will default to `ws://172.30.40.238:8080/ws`.
 
 The regular `lscli` commands are atomic: each invocation connects, performs one operation, then closes.
 

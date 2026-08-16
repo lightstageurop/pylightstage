@@ -11,7 +11,7 @@ from pylightstage import LightStageClient
 
 # WebSocket endpoint
 # Should be ws://serverip:8080/ws
-URI = "ws://10.37.211.100:8080/ws"
+URI = "ws://172.30.40.238:8080/ws"
 
 
 async def main():

@@ -15,11 +15,14 @@ import asyncio
 
 from pylightstage import LightStageClient
 
+# WebSocket endpoint
+URI = "ws://172.30.40.238:8080/ws"
+
 
 async def main():
     print("Connecting to LightStage...")
 
-    async with LightStageClient(uri="ws://127.0.0.1:8080/ws") as client:
+    async with LightStageClient(uri="ws://172.30.40.238:8080/ws") as client:
         # --- Register a callback
         # Called whenever the server broadcasts an event.
         @client.on_event

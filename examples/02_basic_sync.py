@@ -15,7 +15,7 @@ import time
 from pylightstage import LightStageSyncClient
 
 # WebSocket endpoint
-URI = "ws://10.37.211.100:8080/ws"
+URI = "ws://172.30.40.238:8080/ws"
 
 
 def main():

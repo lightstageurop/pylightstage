@@ -18,8 +18,8 @@ from pylightstage import (
     SequenceSummary,
 )
 
-# Default WebSocket endpoint for a locally running Light Stage server.
-SERVER_URI = "ws://172.30.40.238:8080/ws"
+# WebSocket endpoint
+URI = "ws://172.30.40.238:8080/ws"
 
 
 def print_summary(summary: SequenceSummary, title: str = "Sequence Summary") -> None:
@@ -81,9 +81,9 @@ async def main() -> None:
 
     # 3. Upload the sequence, play it, then clean it up.
 
-    print(f"\n[3/3] Connecting to {SERVER_URI}...")
+    print(f"\n[3/3] Connecting to {URI}...")
 
-    async with LightStageClient(uri=SERVER_URI) as client:
+    async with LightStageClient(uri=URI) as client:
         # List sequences that are already stored on the server.
         print("\nServer sequences:")
         existing = await client.list_sequences()
