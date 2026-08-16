@@ -1,6 +1,15 @@
 import { resizeCanvas } from "../math.js";
 
 const SQRT_3 = Math.sqrt(3);
+const COLUMNS_PER_ARC = 2;
+
+/** Map arc-major fixture numbering onto the LightStage's physical two-column arcs. */
+export function fixtureGridPosition(arc, light) {
+  return {
+    column: arc * COLUMNS_PER_ARC + light % COLUMNS_PER_ARC,
+    row: Math.floor(light / COLUMNS_PER_ARC),
+  };
+}
 
 function cssColour(values, multiplier = 1) {
   const channels = values.map((value) => Math.round(Math.min(1, value * multiplier) * 255));
@@ -34,13 +43,15 @@ export class Canvas2DRenderer {
   layout(scene) {
     const { width, height } = this.canvas;
     const padding = Math.max(20, Math.min(width, height) * 0.045);
-    const gridWidth = (scene.arcs + 0.5) * SQRT_3;
-    const gridHeight = 1.5 * (scene.lightsPerArc - 1) + 2;
+    const columnCount = scene.arcs * COLUMNS_PER_ARC;
+    const rowCount = Math.ceil(scene.lightsPerArc / COLUMNS_PER_ARC);
+    const gridWidth = (columnCount + 0.5) * SQRT_3;
+    const gridHeight = 1.5 * (rowCount - 1) + 2;
     const stepRadius = Math.min(
       (width - padding * 2) / gridWidth,
       (height - padding * 2) / gridHeight,
     );
-    const drawnRadius = stepRadius * 0.91;
+    const drawnRadius = stepRadius;
     const occupiedWidth = gridWidth * stepRadius;
     const occupiedHeight = gridHeight * stepRadius;
     const originX = (width - occupiedWidth) / 2 + SQRT_3 * stepRadius / 2;
@@ -49,12 +60,14 @@ export class Canvas2DRenderer {
     this.cells = [];
     for (let arc = 0; arc < scene.arcs; arc += 1) {
       for (let light = 0; light < scene.lightsPerArc; light += 1) {
+        const gridPosition = fixtureGridPosition(arc, light);
         this.cells.push({
           logicalIndex: arc * scene.lightsPerArc + light,
           arc,
           light,
-          x: originX + (arc + (light % 2) / 2) * SQRT_3 * stepRadius,
-          y: originY + light * 1.5 * stepRadius,
+          x: originX
+            + (gridPosition.column + (gridPosition.row % 2) / 2) * SQRT_3 * stepRadius,
+          y: originY + gridPosition.row * 1.5 * stepRadius,
           radius: drawnRadius,
         });
       }
