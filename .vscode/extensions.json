@@ -3,6 +3,7 @@
         "charliermarsh.ruff",
         "detachhead.basedpyright",
         "editorconfig.editorconfig",
+        "ms-python.python",
         "tamasfe.even-better-toml"
     ]
 }
