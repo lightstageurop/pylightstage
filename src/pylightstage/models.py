@@ -121,7 +121,10 @@ class PlaybackSequence:
     def from_cbor(cls, payload: bytes) -> "PlaybackSequence":
         data = cbor2.loads(payload)
         if not isinstance(data, dict):
-            raise ValueError("Invalid CBOR payload for PlaybackSequence")  # noqa: TRY004
+            # The decoded type is valid CBOR but invalid serialized sequence data.
+            raise ValueError(  # noqa: TRY004
+                "Invalid CBOR payload for PlaybackSequence"
+            )
         return cls.from_dict(data)
 
     def save(self, path: str | Path) -> None:

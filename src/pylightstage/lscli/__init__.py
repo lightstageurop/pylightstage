@@ -297,7 +297,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Console-script entry point."""
     try:
         return run(argv)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI boundary reports all failures
         print(f"lscli: error: {exc}", file=sys.stderr)
         return 1
 

@@ -327,7 +327,7 @@ class InteractiveSession:
         self.terminal.write("Waiting for the server to respond…")
         try:
             result = self.dispatch(self.client, args)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - action boundary keeps the UI alive
             self._begin_page(f"Failed: {title}")
             self.terminal.failure(str(exc))
         else:
@@ -458,7 +458,7 @@ def run_interactive(
                     terminal=terminal,
                     input_func=input_func,
                 ).run()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - connection boundary reports failures
             terminal.clear()
             terminal.panel(
                 "LightStage Interactive Console",

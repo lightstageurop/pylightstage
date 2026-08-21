@@ -67,9 +67,15 @@ class LightStageClient:
         if self._websocket is not None:
             return  # already connected
 
-        self._websocket = await asyncio.wait_for(
-            websockets.connect(self._uri), timeout=self._connect_timeout
-        )
+        try:
+            self._websocket = await asyncio.wait_for(
+                websockets.connect(self._uri), timeout=self._connect_timeout
+            )
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"Timed out connecting to {self._uri} after "
+                f"{self._connect_timeout:g} seconds"
+            ) from exc
         self._disconnected_event.clear()
         self._receiver_task = asyncio.create_task(self._receiver())
 
@@ -121,6 +127,8 @@ class LightStageClient:
         try:
             assert self._websocket is not None
             async for raw_msg in self._websocket:
+                if isinstance(raw_msg, str):
+                    raise TypeError("Expected a binary CBOR WebSocket message")
                 msg = cbor2.loads(raw_msg)
                 if not isinstance(msg, dict):
                     continue
@@ -146,8 +154,8 @@ class LightStageClient:
             self._fail_pending_requests(
                 RuntimeError(f"WebSocket connection lost: {exc}")
             )
-        except Exception as exc:
-            logger.exception("Unexpected error in receiver loop")
+        except Exception as exc:  # noqa: BLE001 - receiver must fail pending requests
+            logger.error(f"Unexpected error in receiver loop: {exc}")
             # fail waiting futures
             self._fail_pending_requests(exc)
         finally:
@@ -272,7 +280,11 @@ class LightStageClient:
         scale_value = unit_scale(scale)
         for value in env_map:
             intensity = validate_intensity(value)
-            yield tuple(channel * scale_value for channel in intensity)
+            yield (
+                intensity[0] * scale_value,
+                intensity[1] * scale_value,
+                intensity[2] * scale_value,
+            )
 
     async def go(self):
         """Flush all buffered fixture updates to the server as a batch."""
@@ -331,7 +343,7 @@ class LightStageClient:
 
     # Events
 
-    def on_event(self, fn: Callable[[Any], None]) -> Callable[[Any], None]:
+    def on_event(self, fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
         """Register an event callback handler."""
         self._event_callbacks.append(fn)
         return fn
