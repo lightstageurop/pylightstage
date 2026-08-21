@@ -792,6 +792,18 @@ def test_browser_exposes_brush_and_multi_selection_controls(running_server):
     assert "selectedLogicalIndices" in body.decode()
 
 
+def test_2d_grid_interleaves_the_two_halves_of_each_arc(running_server):
+    status, _, body = request(
+        running_server, "GET", "/assets/renderers/canvas2d.js"
+    )
+
+    script = body.decode()
+    assert status == 200
+    assert "const LIGHTS_PER_HALF_ARC = 7" in script
+    assert "(light % LIGHTS_PER_HALF_ARC) * 2" in script
+    assert "Math.floor(light / LIGHTS_PER_HALF_ARC)" in script
+
+
 @pytest.mark.parametrize(
     "path, content_type, marker",
     [

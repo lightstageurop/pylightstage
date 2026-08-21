@@ -1,12 +1,14 @@
 import { resizeCanvas } from "../math.js";
 
 const SQRT_3 = Math.sqrt(3);
+const LIGHTS_PER_HALF_ARC = 7;
 
-/** Map each arc to one top-to-bottom, alternating honeycomb column. */
+/** Interleave the two seven-light halves of each arc from top to bottom. */
 export function fixtureGridPosition(arc, light) {
   return {
     column: arc,
-    row: light,
+    row: (light % LIGHTS_PER_HALF_ARC) * 2
+      + Math.floor(light / LIGHTS_PER_HALF_ARC),
   };
 }
 
