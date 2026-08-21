@@ -201,6 +201,231 @@ async def test_fixture_control_supports_polarized_clear(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "target, payload, method, expected",
+    [
+        (
+            "arc",
+            {"arc": 4},
+            "set_arc",
+            {
+                "arc": 4,
+                "color": "w",
+                "intensity": (10.0, 20.0, 30.0),
+            },
+        ),
+        (
+            "horizontal_arc",
+            {"light": 6},
+            "set_horizontal_arc",
+            {
+                "light": 6,
+                "color": "w",
+                "intensity": (10.0, 20.0, 30.0),
+            },
+        ),
+    ],
+)
+async def test_fixture_control_supports_direct_group_targets(
+    monkeypatch, target, payload, method, expected
+):
+    actions = []
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        def __getattr__(self, name):
+            assert name == method
+
+            async def call(**kwargs):
+                actions.append(kwargs)
+
+            return call
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    await _apply_fixture_control(
+        ServerConfig(),
+        {
+            "action": "set",
+            "target": target,
+            "selector": "direct",
+            "color": "w",
+            "intensity": [10, 20, 30],
+            **payload,
+        },
+    )
+
+    assert actions == [expected]
+
+
+async def test_fixture_control_applies_multiple_mixed_targets(monkeypatch):
+    actions = []
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def set_light(self, **kwargs):
+            actions.append(("fixture", kwargs))
+
+        async def set_arc(self, **kwargs):
+            actions.append(("arc", kwargs))
+
+        async def set_horizontal_arc(self, **kwargs):
+            actions.append(("horizontal_arc", kwargs))
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    await _apply_fixture_control(
+        ServerConfig(),
+        {
+            "action": "clear",
+            "selector": "direct",
+            "color": "rgb",
+            "targets": [
+                {"target": "fixture", "arc": 1, "light": 2},
+                {"target": "arc", "arc": 3},
+                {"target": "horizontal_arc", "light": 4},
+                {"target": "arc", "arc": 3},
+            ],
+        },
+    )
+
+    assert actions == [
+        (
+            "fixture",
+            {
+                "light": 2,
+                "arc": 1,
+                "color": "rgb",
+                "intensity": (0.0, 0.0, 0.0),
+            },
+        ),
+        (
+            "arc",
+            {"arc": 3, "color": "rgb", "intensity": (0.0, 0.0, 0.0)},
+        ),
+        (
+            "horizontal_arc",
+            {"light": 4, "color": "rgb", "intensity": (0.0, 0.0, 0.0)},
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "target, payload, varying_key, indices, fixed_key, fixed_value",
+    [
+        ("arc", {"arc": 3}, "light", range(14), "arc", 3),
+        (
+            "horizontal_arc",
+            {"light": 5},
+            "arc",
+            range(12),
+            "light",
+            5,
+        ),
+    ],
+)
+async def test_fixture_control_batches_polarized_group_targets(
+    monkeypatch, target, payload, varying_key, indices, fixed_key, fixed_value
+):
+    actions = []
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def set_pol_light(self, **kwargs):
+            actions.append(("set_pol_light", kwargs))
+
+        async def go(self):
+            actions.append(("go", {}))
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    await _apply_fixture_control(
+        ServerConfig(),
+        {
+            "action": "set",
+            "target": target,
+            "selector": "polarized",
+            "polarization": "pp",
+            "intensity": [1, 2, 3],
+            **payload,
+        },
+    )
+
+    fixture_updates = [
+        kwargs for action, kwargs in actions if action == "set_pol_light"
+    ]
+    assert len(fixture_updates) == len(indices)
+    assert {update[varying_key] for update in fixture_updates} == set(indices)
+    assert all(update[fixed_key] == fixed_value for update in fixture_updates)
+    assert all(update["pol"] == "pp" for update in fixture_updates)
+    assert all(update["intensity"] == (1.0, 2.0, 3.0) for update in fixture_updates)
+    assert all(update["go"] is False for update in fixture_updates)
+    assert actions[-1] == ("go", {})
+
+
+async def test_fixture_control_deduplicates_overlapping_polarized_targets(monkeypatch):
+    updates = []
+
+    class FakeClient:
+        def __init__(self, *, uri):
+            self.uri = uri
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def set_pol_light(self, **kwargs):
+            updates.append(kwargs)
+
+        async def go(self):
+            return None
+
+    monkeypatch.setattr("pylightstage.lswebui.server.LightStageClient", FakeClient)
+
+    await _apply_fixture_control(
+        ServerConfig(),
+        {
+            "action": "set",
+            "selector": "polarized",
+            "polarization": "cp",
+            "targets": [
+                {"target": "arc", "arc": 3},
+                {"target": "horizontal_arc", "light": 5},
+                {"target": "fixture", "arc": 3, "light": 5},
+            ],
+        },
+    )
+
+    assert len(updates) == 25
+    assert len({(update["arc"], update["light"]) for update in updates}) == 25
+
+
+@pytest.mark.parametrize(
     "action, method, result",
     [
         ("get-config", "get_config", {"arcs": 12}),
@@ -262,11 +487,30 @@ async def test_server_inspector_rejects_non_read_actions_before_connecting():
             },
             "polarization",
         ),
+        (
+            {"action": "set", "target": "stage", "arc": 0, "light": 0},
+            "target must be one of",
+        ),
     ],
 )
 async def test_fixture_control_validates_before_connecting(payload, message):
     with pytest.raises((ValueError, IndexError), match=message):
         await _apply_fixture_control(ServerConfig(), payload)
+
+
+@pytest.mark.parametrize(
+    "targets, message",
+    [
+        ([], "non-empty array"),
+        ("arc", "non-empty array"),
+        (["arc"], "JSON object"),
+    ],
+)
+async def test_fixture_control_validates_multi_target_shape(targets, message):
+    with pytest.raises(TypeError, match=message):
+        await _apply_fixture_control(
+            ServerConfig(), {"action": "set", "targets": targets}
+        )
 
 
 @pytest.fixture
@@ -400,6 +644,61 @@ def test_fixture_endpoint_applies_a_valid_command(running_server, monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "payload, expected",
+    [
+        (
+            {"action": "set", "target": "arc", "arc": 2},
+            {"status": "ok", "action": "set", "target": "arc", "arc": 2},
+        ),
+        (
+            {"action": "clear", "target": "horizontal_arc", "light": 5},
+            {
+                "status": "ok",
+                "action": "clear",
+                "target": "horizontal_arc",
+                "light": 5,
+            },
+        ),
+        (
+            {
+                "action": "set",
+                "targets": [
+                    {"target": "arc", "arc": 2},
+                    {"target": "horizontal_arc", "light": 5},
+                ],
+            },
+            {
+                "status": "ok",
+                "action": "set",
+                "targets": [
+                    {"target": "arc", "arc": 2},
+                    {"target": "horizontal_arc", "light": 5},
+                ],
+            },
+        ),
+    ],
+)
+def test_fixture_endpoint_returns_group_target_metadata(
+    running_server, monkeypatch, payload, expected
+):
+    async def apply(_config, _payload):
+        return None
+
+    monkeypatch.setattr("pylightstage.lswebui.server._apply_fixture_control", apply)
+
+    status, _, body = request(
+        running_server,
+        "POST",
+        "/api/fixture",
+        body=json.dumps(payload),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert status == 200
+    assert json.loads(body) == expected
+
+
+@pytest.mark.parametrize(
     "body, expected_error",
     [
         ("", "request body must contain JSON"),
@@ -470,6 +769,27 @@ def test_browser_connectivity_status_is_driven_by_a_repeated_read_probe(running_
     )
     assert 'setConnectivityStatus("ready", "Ready"' in script
     assert 'setConnectivityStatus("error", "Unavailable"' in script
+
+
+def test_browser_exposes_brush_and_multi_selection_controls(running_server):
+    status, _, body = request(running_server, "GET", "/")
+    page = body.decode()
+    assert status == 200
+    assert 'name="selection-brush"' in page
+    assert 'value="horizontal_arc"' in page
+    assert 'id="selection-chips"' in page
+
+    status, _, body = request(running_server, "GET", "/assets/fixture-controls.js")
+    controls = body.decode()
+    assert status == 200
+    assert "selectedTargets" in controls
+    assert "modifiers.additive" in controls
+    assert "modifiers.toggle" in controls
+    assert "targets: selectedTargets.map" in controls
+
+    status, _, body = request(running_server, "GET", "/assets/scene.js")
+    assert status == 200
+    assert "selectedLogicalIndices" in body.decode()
 
 
 @pytest.mark.parametrize(

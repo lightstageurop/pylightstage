@@ -131,6 +131,24 @@
         </div>
       </div>
       <div id="canvas-shell" class="canvas-shell" data-mode="3d">
+        <div class="brush-toolbar" aria-label="Selection brush">
+          <span class="brush-label">Brush</span>
+          <div class="brush-options" role="radiogroup" aria-label="Selection brush type">
+            <label title="Select individual logical fixtures">
+              <input type="radio" name="selection-brush" value="fixture" checked>
+              <span>Fixture</span>
+            </label>
+            <label title="Select every fixture in an arc">
+              <input type="radio" name="selection-brush" value="arc">
+              <span>Arc</span>
+            </label>
+            <label title="Select one light index across every arc">
+              <input type="radio" name="selection-brush" value="horizontal_arc">
+              <span>Horizontal</span>
+            </label>
+          </div>
+          <small><kbd>Shift</kbd> add · <kbd>Ctrl</kbd> toggle</small>
+        </div>
         <canvas id="stage-view" tabindex="0"
           aria-label="Interactive three-dimensional LightStage fixture visualization. Drag to orbit and scroll to zoom."></canvas>
         <canvas id="grid-view" tabindex="0"
@@ -143,9 +161,9 @@
           <span class="axis-z">Z</span>
         </div>
         <p id="interaction-hint-3d" class="interaction-hint"><span aria-hidden="true">↔</span> Drag to orbit <i></i>
-          Click a fixture to select <i></i> Scroll to zoom</p>
+          Click to paint a selection <i></i> Scroll to zoom</p>
         <p id="interaction-hint-2d" class="interaction-hint" hidden><span aria-hidden="true">⬡</span> Click a hexagon to
-          select its logical fixture</p>
+          paint a selection</p>
       </div>
       <p id="fallback-note" class="notice" hidden>
         WebGPU is unavailable, so this session is using the Canvas 2D fallback.
@@ -164,9 +182,16 @@
         <div id="selection-empty" class="fixture-summary">
           <span class="fixture-glyph" aria-hidden="true"><i></i><i></i></span>
           <div>
-            <strong>Select a logical fixture</strong>
-            <p>Click a cylinder pair in 3D or a hexagon in the grid to inspect and control it.</p>
+            <strong>Paint a selection</strong>
+            <p>Choose a brush on the stage, then click a fixture. Hold Shift to add or Ctrl to toggle targets.</p>
           </div>
+        </div>
+        <div id="selection-summary" class="selection-summary" hidden>
+          <div class="selection-summary-heading">
+            <span id="selection-count">0 fixtures</span>
+            <button id="clear-selection" type="button">Clear</button>
+          </div>
+          <div id="selection-chips" class="selection-chips" aria-label="Selected targets"></div>
         </div>
       </section>
 

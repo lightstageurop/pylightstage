@@ -30,6 +30,7 @@ export class StageScene {
     this.instanceData = new Float32Array(this.count * this.instanceStride);
     this.fixtures = [];
     this.visibility = { rgb: true, white: true };
+    this.selectedLogicalIndices = new Set();
     this.selectedLogicalIndex = null;
     this.version = 0;
     this.#buildLayout();
@@ -109,7 +110,7 @@ export class StageScene {
     if (!(channel in this.visibility)) throw new RangeError(`Unknown fixture layer: ${channel}`);
     this.visibility[channel] = Boolean(visible);
     for (let logicalIndex = 0; logicalIndex < this.logicalCount; logicalIndex += 1) {
-      const selected = logicalIndex === this.selectedLogicalIndex;
+      const selected = this.selectedLogicalIndices.has(logicalIndex);
       this.#setAlpha(logicalIndex, channel, visible ? (selected ? 2 : 1) : 0);
     }
     this.version += 1;
@@ -129,7 +130,7 @@ export class StageScene {
     colour.slice(0, 3).forEach((value, index) => {
       this.instanceData[offset + index] = value;
     });
-    const selected = logicalIndex === this.selectedLogicalIndex;
+    const selected = this.selectedLogicalIndices.has(logicalIndex);
     this.#setAlpha(
       logicalIndex,
       channel,
@@ -138,20 +139,33 @@ export class StageScene {
     if (bumpVersion) this.version += 1;
   }
 
-  selectFixture(logicalIndex) {
-    if (!Number.isInteger(logicalIndex) || logicalIndex < 0 || logicalIndex >= this.logicalCount) {
-      throw new RangeError(`Logical fixture ${logicalIndex} is outside the stage layout`);
+  selectFixtures(logicalIndices, primaryLogicalIndex = null) {
+    const selection = new Set(logicalIndices);
+    for (const logicalIndex of selection) {
+      if (!Number.isInteger(logicalIndex)
+          || logicalIndex < 0
+          || logicalIndex >= this.logicalCount) {
+        throw new RangeError(`Logical fixture ${logicalIndex} is outside the stage layout`);
+      }
     }
-    const previous = this.selectedLogicalIndex;
-    this.selectedLogicalIndex = logicalIndex;
-    for (const index of [previous, logicalIndex]) {
-      if (index === null) continue;
+    if (primaryLogicalIndex !== null && !selection.has(primaryLogicalIndex)) {
+      throw new RangeError("Primary fixture must be part of the selection");
+    }
+
+    const changed = new Set([...this.selectedLogicalIndices, ...selection]);
+    this.selectedLogicalIndices = selection;
+    this.selectedLogicalIndex = primaryLogicalIndex;
+    for (const index of changed) {
       for (const channel of ["rgb", "white"]) {
-        const alpha = this.visibility[channel] ? (index === logicalIndex ? 2 : 1) : 0;
+        const alpha = this.visibility[channel] ? (selection.has(index) ? 2 : 1) : 0;
         this.#setAlpha(index, channel, alpha);
       }
     }
     this.version += 1;
+  }
+
+  selectFixture(logicalIndex) {
+    this.selectFixtures([logicalIndex], logicalIndex);
   }
 
   getLogicalCentre(logicalIndex) {

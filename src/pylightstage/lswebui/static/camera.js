@@ -90,7 +90,12 @@ export function installCameraControls(canvas, scene, buttons, onSelect) {
     drag = null;
     if (!wasClick) return;
     const logicalIndex = pickFixture(canvas, scene, event.clientX, event.clientY);
-    if (logicalIndex !== null) onSelect(logicalIndex);
+    if (logicalIndex !== null) {
+      onSelect(logicalIndex, {
+        additive: event.shiftKey,
+        toggle: event.ctrlKey || event.metaKey,
+      });
+    }
   };
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);

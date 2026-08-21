@@ -192,11 +192,13 @@ with create_server(config) as server:
 ```
 
 The interface exposes `GET /api/health` for readiness and `GET /api/config` for
-browser bootstrap data. Selecting a cylinder pair in 3D or a hexagon in the grid
-exposes the same direct RGB/W and polarized UP/CP/PP controls. Explicit changes
-are sent through the local server using the same validated client operations as
-`lscli`; merely selecting a fixture or editing an intensity does not send a
-hardware command.
+browser bootstrap data. A brush over the central view selects individual
+fixtures, entire arcs, or horizontal arcs (the same light index across every
+arc). Shift-click adds targets and Ctrl-click toggles them; the inspector shows
+the current target set as removable chips. Direct RGB/W and polarized UP/CP/PP
+controls apply to the full selection. Explicit changes are sent through the
+local server using the same validated client operations as `lscli`; merely
+selecting targets or editing an intensity does not send a hardware command.
 
 ## License
 

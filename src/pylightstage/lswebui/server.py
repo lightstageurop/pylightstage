@@ -42,6 +42,9 @@ _INSPECT_ACTIONS = {
     "get-mode": "get_mode",
     "list-sequences": "list_sequences",
 }
+_CONTROL_TARGETS = ("fixture", "arc", "horizontal_arc")
+_NUM_ARCS = 12
+_LIGHTS_PER_ARC = 14
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,14 +97,50 @@ def _required_index(payload: dict[str, Any], name: str, size: int) -> int:
     return validate_index(name, value, size=size)
 
 
+def _control_target(payload: dict[str, Any]) -> tuple[str, int | None, int | None]:
+    target = payload.get("target", "fixture")
+    if target not in _CONTROL_TARGETS:
+        choices = ", ".join(repr(choice) for choice in _CONTROL_TARGETS)
+        raise ValueError(f"target must be one of: {choices}")
+    arc = (
+        _required_index(payload, "arc", _NUM_ARCS)
+        if target in ("fixture", "arc")
+        else None
+    )
+    light = (
+        _required_index(payload, "light", _LIGHTS_PER_ARC)
+        if target in ("fixture", "horizontal_arc")
+        else None
+    )
+    return target, arc, light
+
+
+def _control_targets(
+    payload: dict[str, Any],
+) -> list[tuple[str, int | None, int | None]]:
+    raw_targets = payload.get("targets")
+    if raw_targets is None:
+        return [_control_target(payload)]
+    if not isinstance(raw_targets, list) or not raw_targets:
+        raise TypeError("targets must be a non-empty array")
+
+    targets: list[tuple[str, int | None, int | None]] = []
+    for raw_target in raw_targets:
+        if not isinstance(raw_target, dict):
+            raise TypeError("each target must be a JSON object")
+        target = _control_target(raw_target)
+        if target not in targets:
+            targets.append(target)
+    return targets
+
+
 async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) -> None:
-    """Apply one explicit fixture action through the same client API as lscli."""
+    """Apply one explicit fixture or fixture-group action through the client API."""
 
     action = payload.get("action")
     if action not in ("set", "clear"):
         raise ValueError("action must be 'set' or 'clear'")
-    arc = _required_index(payload, "arc", 12)
-    light = _required_index(payload, "light", 14)
+    targets = _control_targets(payload)
     intensity = validate_intensity(
         [0, 0, 0] if action == "clear" else payload.get("intensity", [255, 255, 255])
     )
@@ -118,20 +157,87 @@ async def _apply_fixture_control(config: ServerConfig, payload: dict[str, Any]) 
 
     async with LightStageClient(uri=config.lightstage_uri) as client:
         if color is not None:
-            await client.set_light(
-                light=light,
-                arc=arc,
-                color=color,
-                intensity=intensity,
-            )
+            for target, arc, light in targets:
+                if target == "fixture":
+                    assert arc is not None and light is not None
+                    await client.set_light(
+                        light=light,
+                        arc=arc,
+                        color=color,
+                        intensity=intensity,
+                    )
+                elif target == "arc":
+                    assert arc is not None
+                    await client.set_arc(arc=arc, color=color, intensity=intensity)
+                else:
+                    assert light is not None
+                    await client.set_horizontal_arc(
+                        light=light,
+                        color=color,
+                        intensity=intensity,
+                    )
         else:
             assert polarization is not None
-            await client.set_pol_light(
-                light=light,
-                arc=arc,
-                pol=polarization,
-                intensity=intensity,
-            )
+            fixtures: set[tuple[int, int]] = set()
+            for target, arc, light in targets:
+                if target == "fixture":
+                    assert arc is not None and light is not None
+                    fixtures.add((arc, light))
+                elif target == "arc":
+                    assert arc is not None
+                    fixtures.update(
+                        (arc, light_index) for light_index in range(_LIGHTS_PER_ARC)
+                    )
+                else:
+                    assert light is not None
+                    fixtures.update(
+                        (arc_index, light) for arc_index in range(_NUM_ARCS)
+                    )
+
+            if len(fixtures) == 1:
+                arc, light = fixtures.pop()
+                await client.set_pol_light(
+                    light=light,
+                    arc=arc,
+                    pol=polarization,
+                    intensity=intensity,
+                )
+            else:
+                for arc_index, light_index in sorted(fixtures):
+                    await client.set_pol_light(
+                        light=light_index,
+                        arc=arc_index,
+                        pol=polarization,
+                        intensity=intensity,
+                        go=False,
+                    )
+                await client.go()
+
+
+def _control_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return target-aware metadata while preserving the original fixture response."""
+
+    if "targets" in payload:
+        return {
+            "status": "ok",
+            "targets": payload["targets"],
+            "action": payload["action"],
+        }
+    if "target" not in payload:
+        return {
+            "status": "ok",
+            "arc": payload["arc"],
+            "light": payload["light"],
+            "action": payload["action"],
+        }
+
+    target = payload["target"]
+    response = {"status": "ok", "target": target, "action": payload["action"]}
+    if target in ("fixture", "arc"):
+        response["arc"] = payload["arc"]
+    if target in ("fixture", "horizontal_arc"):
+        response["light"] = payload["light"]
+    return response
 
 
 async def _inspect_server(config: ServerConfig, action: str) -> Any:
@@ -233,15 +339,7 @@ def _handler_for(config: ServerConfig) -> type[BaseHTTPRequestHandler]:
             except Exception as exc:  # noqa: BLE001
                 self._send_stage_error(exc, "command")
                 return
-            self._send_json(
-                {
-                    "status": "ok",
-                    "arc": payload["arc"],
-                    "light": payload["light"],
-                    "action": payload["action"],
-                },
-                head_only=False,
-            )
+            self._send_json(_control_response(payload), head_only=False)
 
         def _read_json_object(self) -> dict[str, Any]:
             content_length = int(self.headers.get("Content-Length", ""))

@@ -113,7 +113,12 @@ function installSceneControls(scene, gridRenderer, selectFixture) {
   installCameraControls(canvas, scene, viewButtons, selectFixture);
   gridCanvas.addEventListener("click", (event) => {
     const logicalIndex = gridRenderer.pick(event.clientX, event.clientY);
-    if (logicalIndex !== null) selectFixture(logicalIndex);
+    if (logicalIndex !== null) {
+      selectFixture(logicalIndex, {
+        additive: event.shiftKey,
+        toggle: event.ctrlKey || event.metaKey,
+      });
+    }
   });
 }
 
